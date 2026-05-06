@@ -12,6 +12,6 @@ Prerequisites:
 ## Analysis scripts
 
 1. `SNV_analysis/hap2020_analysispy_refbased_v3.py`: Filters samples and variants based on relevant statistics and reconstructs the phylogeny. As input, it requires both output files from the species-specific raw data processing (`candidate_mutation_table.pickle.gz`, `cov_raw_sparsecsr_mat.npz`).
-2. `subsequent_analysis/pairwise_SNV_diff_refbased_all_specs_v2.1.py`: Given the reconstructed tree, the distance to the most recent common ancestor is used to calculated the pairwise SNV difference within each pathogen-patient pair. 
+2. `subsequent_analysis/pairwise_SNV_diff_refbased_all_specs_v2.1.py`: Given the reconstructed tree, the distance to the most recent common ancestor is used to calculated the pairwise SNV difference for each pathogen species across and within patients. 
 
 
