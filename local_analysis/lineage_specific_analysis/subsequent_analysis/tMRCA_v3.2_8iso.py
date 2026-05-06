@@ -1,6 +1,7 @@
 
 import os
 import glob
+import re
 import numpy as np
 from scipy import stats
 from scipy.optimize import minimize
@@ -56,7 +57,7 @@ def calculate_molecular_clock_rate(mol_clock_data, subj_spec, unique_tps):
         num_samples = np.nan
     return [mut_rate_obs, mut_rate_obs_ci95, num_samples]
 
-def calculate_tmrca_via_MCsimulation(num_muts_per_smpl, mut_rate, ci95_vals, n_sim=10000, seed=123, mut_rate_fit_method = 'gamma', plot_histogram = False, subj_spec = ''):
+def calculate_tmrca_via_MCsimulation(num_muts_per_smpl, mut_rate, ci95_vals, n_sim=10000, seed=123, mut_rate_fit_method = 'gamma', plot_histogram = False, subj_spec = '', hist_plot_title = ''):
     ## calculate the observed point estimate for the tmrca as well as 95% CI values given Monte Carlo simulations of the mutation rate and 
     ## bootstraps of the number of observed SNVs
     ## To fit the distribution for the mutation rate, choose either a 'normal' (0-bounded), 'log-normal' or 'gamma' distribution
@@ -102,7 +103,7 @@ def calculate_tmrca_via_MCsimulation(num_muts_per_smpl, mut_rate, ci95_vals, n_s
         np.random.seed(seed)
         # fit distribution to sample from n_sim times (--> mutation-rates are 0-bounded! to avoid negative values, use gamma distribution)
         ## NOTE: While this fits the CI values truely, it also performs well on credible intervals given those parameters. HOWEVER: This still does not mean that it is the true shape, but it is still rather the better guess than just using the HDP interval estimates without error propagation!!!
-        gamma_shape, gamma_scale = fit_gamma_from_ci(mut_rate, ci95_vals[0], ci95_vals[1], mean_weight=2, ci_lower_weight=1, ci_upper_weight=1) ## fit gamma distribution given the mean and CI values via minimization of the difference between guessed and observed values; apply weights if one value is more important
+        gamma_shape, gamma_scale = fit_gamma_from_ci(mut_rate, ci95_vals[0], ci95_vals[1], mean_weight=1, ci_lower_weight=1, ci_upper_weight=1) ## fit gamma distribution given the mean and CI values via minimization of the difference between guessed and observed values; apply weights if one value is more important
         mut_rate_dist_sampled_gamma_fit = stats.gamma.rvs(a=gamma_shape, scale=gamma_scale, size=n_sim) ## sample from fitted gamma distribution
         if mut_rate_fit_method == 'gamma':
             mut_rate_dist_sampled = mut_rate_dist_sampled_gamma_fit
@@ -133,7 +134,7 @@ def calculate_tmrca_via_MCsimulation(num_muts_per_smpl, mut_rate, ci95_vals, n_s
         ax.plot(gamma_fit_x, gamma_fit_y, color='#d95f02', lw = 1.5, label = 'gamma')
         ax.set_ylim((0, None))
         ax.legend(title='Distributions with\nmean (solid lines) and\nCI95% (dashed lines)', loc = 'center left', bbox_to_anchor = (1, 0.5))
-        ax.set_title(subj_spec)
+        ax.set_title(hist_plot_title)
         plt.tight_layout()
         fig.savefig(os.path.expanduser(f'~/Nextcloud/keylab/projects/mf_2020_hap/labbook/data_analysis/figures/2025_06_09_{subj_spec}_mol_clock_distribution_fit_for_MCsimulation.svg'))
 
@@ -149,10 +150,10 @@ def calculate_tmrca_via_MCsimulation(num_muts_per_smpl, mut_rate, ci95_vals, n_s
 
     return [tmrca_mutrate, tmrca_mutrate_ci95]
 
-def objective_function(gamma_args_tuple, mut_rate, ci_lower, ci_upper, mean_weight=1, ci_lower_weight=1, ci_upper_weight=1):
+def objective_function(gamma_args_tuple_log, mut_rate, ci_lower, ci_upper, mean_weight=1, ci_lower_weight=1, ci_upper_weight=1):
     ## calculate difference between guessed and observed mutation rate (mean and CIs) and 
     ## sum up (weighted) squared errors to minimize upon 
-
+    gamma_args_tuple = np.exp(gamma_args_tuple_log)
     # validate that agruments are ≥0
     if gamma_args_tuple[0] <= 0 or gamma_args_tuple[1] <= 0:
         return np.inf
@@ -165,13 +166,14 @@ def objective_function(gamma_args_tuple, mut_rate, ci_lower, ci_upper, mean_weig
     gamma_upper_quantile = stats.gamma.ppf(0.975, a=gamma_args_tuple[0], scale=gamma_args_tuple[1])
 
     ## get errors and return sum of errors with weights (optional) to apply minimization
-    error_mean = (gamma_mean - mut_rate)**2
-    error_lower_ci = (gamma_lower_quantile - ci_lower)**2
-    error_upper_ci = (gamma_upper_quantile - ci_upper)**2
+    error_mean = ((gamma_mean - mut_rate)/mut_rate)**2 ## sum of squared error without dimensionality due to normalization
+    error_lower_ci = ((gamma_lower_quantile - ci_lower)/ci_lower)**2 ## sum of squared error without dimensionality due to normalization
+    error_upper_ci = ((gamma_upper_quantile - ci_upper)/ci_upper)**2 ## sum of squared error without dimensionality due to normalization
 
-    return error_mean*mean_weight + error_lower_ci*ci_lower_weight + error_upper_ci*ci_upper_weight
+    error_value = error_mean*mean_weight + error_lower_ci*ci_lower_weight + error_upper_ci*ci_upper_weight
+    return error_value
 
-def fit_gamma_from_ci(mut_rate, ci_lower, ci_upper, mean_weight=1, ci_lower_weight=1, ci_upper_weight=1):
+def fit_gamma_from_ci(mut_rate, ci_lower, ci_upper, mean_weight=1, ci_lower_weight=1, ci_upper_weight=1, low_val = 1e-16):
     ## fitting a gamma distribution to a mutation rate given the mean and 95% confidence intervals
     if ci_upper - ci_lower == 0:
         return None, None
@@ -181,27 +183,25 @@ def fit_gamma_from_ci(mut_rate, ci_lower, ci_upper, mean_weight=1, ci_lower_weig
 
     ini_scale = var_mut_rate / mut_rate ## https://library.virginia.edu/data/articles/getting-started-with-gamma-regression
     ini_shape = mut_rate**2 / var_mut_rate ## https://library.virginia.edu/data/articles/getting-started-with-gamma-regression
-        
-    # Bounds for the parameters (shape and scale must be positive)
-    bounds = ((1e-16, None), (1e-16, None)) # Small positive lower bound
-
+    
+    ## transform to log space that the optimizer does not need bounds which can be very fragile (optimization function returns to normal space, while the optimizer stays in log space!)
+    ini_scale_log = np.log(ini_scale) 
+    ini_shape_log = np.log(ini_shape)
     
     minimizer_result = minimize(objective_function,
-                                (ini_shape, ini_scale),
+                                (ini_shape_log, ini_scale_log),
                                 args=(mut_rate, ci_lower, ci_upper, mean_weight, ci_lower_weight, ci_upper_weight),
-                                bounds=bounds,
                                 method='L-BFGS-B'  # default method using bounds
                                 )
-
     if minimizer_result.success:
-        return minimizer_result.x
+        return np.exp(minimizer_result.x)
     else:
         print(f'Optimization failed: {minimizer_result.message}')
         return None, None
 
-def get_tmrca_per_tp(mol_clock_data, unique_tps, mut_rate_obs = np.nan, mut_rate_obs_ci95 = np.nan, mut_rate_literature = np.nan, mut_rate_ci95_literature = np.nan, basescale = 1000000, req_isolate_num = 5, subj_spec = '', plot_histogram=False):
+
+def get_tmrca_per_tp(mol_clock_data, unique_tps, mut_rate = np.nan, mut_rate_ci95 = [np.nan, np.nan], basescale = 1000000, req_isolate_num = 5, subj_spec = '', plot_histogram=False, mol_clock_type = '', hist_plot_title = ''):
     
-    mut_rate_dict = {}
     ## loop over all timepoints 
     ploted_hist = False
     for tp in unique_tps:
@@ -216,8 +216,7 @@ def get_tmrca_per_tp(mol_clock_data, unique_tps, mut_rate_obs = np.nan, mut_rate
             if ploted_hist:
                 plot_histogram = False
             ploted_hist = True
-            [tmrca_pat_spec_mutrate, tmrca_pat_spec_mutrate_ci95] = calculate_tmrca_via_MCsimulation(num_mut_scaled * 365, mut_rate_obs, mut_rate_obs_ci95, mut_rate_fit_method = 'gamma', n_sim=10000, seed=123, plot_histogram=plot_histogram, subj_spec = subj_spec) ## note: *365 is to convert mutation rate from a yearly basis to a daily! By multiplying num_mut_scaled it is easier than implementing it to the list of CIs as well!
-            [tmrca_lit_mutrate, tmrca_lit_mutrate_ci95] = calculate_tmrca_via_MCsimulation(num_mut_scaled * 365, mut_rate_literature, mut_rate_ci95_literature, mut_rate_fit_method = 'gamma', n_sim=10000, seed=123, plot_histogram=plot_histogram, subj_spec = subj_spec) ## note: *365 is to convert mutation rate from a yearly basis to a daily! By multiplying num_mut_scaled it is easier than implementing it to the list of CIs as well!
+            [tmrca_mean, tmrca_ci95] = calculate_tmrca_via_MCsimulation(num_mut_scaled * 365, mut_rate, mut_rate_ci95, mut_rate_fit_method = 'gamma', n_sim=10000, seed=123, plot_histogram=plot_histogram, subj_spec = subj_spec, hist_plot_title = hist_plot_title) ## note: *365 is to convert mutation rate from a yearly basis to a daily! By multiplying num_mut_scaled it is easier than implementing it to the list of CIs as well!
             
             ## get how many days since hosp admission to tp:
             d_since_hospadmission = np.unique(mol_clock_data[tp_idx, 0])[0]
@@ -225,17 +224,14 @@ def get_tmrca_per_tp(mol_clock_data, unique_tps, mut_rate_obs = np.nan, mut_rate
             mut_rate_dict[tp + 1] = {'days_in_hosp': d_since_hospadmission,
                                     'days_to_root': np.unique(mol_clock_data[tp_idx,1])[0],
                                     'num_isolates': len(tp_idx),
-                                    'mut_rate_obs': mut_rate_obs,
-                                    'mut_rate_obs_ci95': mut_rate_obs_ci95,
-                                    'mut_rate_lit': mut_rate_literature,
-                                    'mut_rate_lit_ci95': mut_rate_ci95_literature,
+                                    'mut_rate': mut_rate,
+                                    'mut_rate_ci95': mut_rate_ci95,
                                     'mean_mut': np.mean(num_mut_scaled/basescale), 
                                     'ci95_mut': np.percentile(num_mut_scaled/basescale, [2.5, 97.5]), 
                                     'num_muts': f"[{','.join([str(mut) for mut in num_mut_scaled])}]",
-                                    'tmrca_meanmut_pat_spec': tmrca_pat_spec_mutrate,
-                                    'ci95_meanmut_tmrca_pat_spec': tmrca_pat_spec_mutrate_ci95,
-                                    'tmrca_meanmut_lit': tmrca_lit_mutrate,
-                                    'ci95_meanmut_tmrca_lit': tmrca_lit_mutrate_ci95
+                                    'tmrca_meanmut': tmrca_mean,
+                                    'tmrca_meanmut_ci95': tmrca_ci95,
+                                    'mol_clock_type': mol_clock_type
                                     }
     ## convert data to df 
     tmp_mutation_rate_df = pd.DataFrame(mut_rate_dict).T.reset_index()
@@ -262,15 +258,15 @@ def add_metadata_to_df(tmrca_spec, inf_day_dict):
 def combine_literature_inferred_clock_for_plot(tmrca_spec_df, clade_to_use_inferred_clocks = [], annotate_clock = {}, color_of_clock = {}):
 
     ## bring the respective plots to one column for plot
-    tmrca_spec_df['tmrca_fin'] = tmrca_spec_df['tmrca_meanmut_lit']
-    tmrca_spec_df['ci95_tmrca_fin'] = tmrca_spec_df['ci95_meanmut_tmrca_lit']
-    tmrca_spec_df['mut_rate_fin'] = tmrca_spec_df['mut_rate_lit']
-    tmrca_spec_df['ci95_mut_rate_fin'] = tmrca_spec_df['mut_rate_lit_ci95']
+    tmrca_spec_df['tmrca_meanmut'] = tmrca_spec_df['tmrca_meanmut_lit']
+    tmrca_spec_df['tmrca_meanmut_ci95'] = tmrca_spec_df['ci95_meanmut_tmrca_lit']
+    tmrca_spec_df['mut_rate'] = tmrca_spec_df['mut_rate_lit']
+    tmrca_spec_df['ci95_mut_rate'] = tmrca_spec_df['mut_rate_lit_ci95']
     is_ehorm_bool = (tmrca_spec_df['spec_clade_subj_plt'].isin(clade_to_use_inferred_clocks))
-    tmrca_spec_df.loc[is_ehorm_bool, 'tmrca_fin'] = tmrca_spec_df.loc[is_ehorm_bool, 'tmrca_meanmut_pat_spec']
-    tmrca_spec_df.loc[is_ehorm_bool, 'ci95_tmrca_fin'] = tmrca_spec_df.loc[is_ehorm_bool, 'ci95_meanmut_tmrca_pat_spec']
-    tmrca_spec_df.loc[is_ehorm_bool, 'mut_rate_fin'] = tmrca_spec_df.loc[is_ehorm_bool, 'mut_rate_obs']
-    tmrca_spec_df.loc[is_ehorm_bool, 'ci95_mut_rate_fin'] = tmrca_spec_df.loc[is_ehorm_bool, 'mut_rate_obs_ci95']
+    tmrca_spec_df.loc[is_ehorm_bool, 'tmrca_meanmut'] = tmrca_spec_df.loc[is_ehorm_bool, 'tmrca_meanmut_pat_spec']
+    tmrca_spec_df.loc[is_ehorm_bool, 'tmrca_meanmut_ci95'] = tmrca_spec_df.loc[is_ehorm_bool, 'ci95_meanmut_tmrca_pat_spec']
+    tmrca_spec_df.loc[is_ehorm_bool, 'mut_rate'] = tmrca_spec_df.loc[is_ehorm_bool, 'mut_rate_obs']
+    tmrca_spec_df.loc[is_ehorm_bool, 'ci95_mut_rate'] = tmrca_spec_df.loc[is_ehorm_bool, 'mut_rate_obs_ci95']
     
     ## map which species has which clock gotten // hardcoded
     tmrca_spec_inf_clades['clock_for_inference'] = tmrca_spec_inf_clades['species'].map(annotate_clock)
@@ -301,15 +297,30 @@ for ref_genome_folder in glob.glob(os.path.expanduser('~/Nextcloud/keylab/projec
 confidence=0.95
 basescale = 1000000 # rescale genome-wide molecular rate to human-readable numbers
 mutation_rate_df = pd.DataFrame()
-mutation_rate_inf_df = pd.DataFrame()
 
 ## ncbi search: ((("Pseudomonas aeruginosa") OR (Pseudomonas)) AND (("mutation rate") OR ("molecular clock") OR ("substitution rate") AND (("/year") OR ("per year")) 
+## read in mutation rates from file 
+mut_rates_literature = pd.read_excel('~/Nextcloud/keylab/projects/mf_2020_hap/labbook/data_analysis/metadata/2025_12_09_avail_published_mol_clocks_HAI_project.xlsx', sheet_name='Sheet3')
+## subset to species_of_interest
+mut_rates_literature = mut_rates_literature[(mut_rates_literature['Genus'] == 'Staphylococcus') & 
+                      (mut_rates_literature['species'] == 'aureus') & 
+                      mut_rates_literature['Strain'].notna() & 
+                      mut_rates_literature['mutation rate (credible intervals)'].notna() & 
+                      (mut_rates_literature['credible interval type'] != 'IQR') & ## exclude interquartile ranges
+                      (mut_rates_literature['unit'].isin(['SNV/site/year', 'SNVs/Mb/year']))
+                      ].reset_index(drop = True)
 
-mutationrates = {   'Apittii': [1.286e-6, [1.125e-6, 1.449e-6]],                                                  # https://www.ncbi.nlm.nih.gov/pmc/articles/PMC8875366/
-                    'Bthetaiotaomicron': [0.9/genome_length_dict['Bthetaiotaomicron-c1']],                        # https://www.ncbi.nlm.nih.gov/pmc/articles/PMC6749991/
-                    'Kmichiganensis': [1.9e-6, [1.1e-6, 2.9e-6]],                                                 # https://journals.asm.org/doi/full/10.1128/aac.04292-14
-                    'Saureus': [2.72/genome_length_dict['Saureus-ST97-c3'], [1.64/genome_length_dict['Saureus-ST97-c3'], 4.42/genome_length_dict['Saureus-ST97-c3']]]                                   # https://www.pnas.org/doi/epdf/10.1073/pnas.1113219109
-                }
+mut_rates_literature.rename(columns={'mutation rate (point estimate)': 'mol_clock_pe',
+                          'mutation rate (credible intervals)': 'mol_clock_ci'}, inplace=True)
+
+mut_rates_literature['mol_clock_ci_l'] = mut_rates_literature['mol_clock_ci'].apply(lambda s: re.split(r'(?<![eE])-', s)[0] if isinstance(s, str) else s)
+mut_rates_literature['mol_clock_ci_h'] = mut_rates_literature['mol_clock_ci'].apply(lambda s: re.split(r'(?<![eE])-', s)[1] if isinstance(s, str) else s)
+
+## transform molecular clocks to same units: SNV/Mb/year
+for col in ['mol_clock_pe', 'mol_clock_ci_l', 'mol_clock_ci_h']:
+    mut_rates_literature[col] = mut_rates_literature[col].astype(float)
+    mut_rates_literature.loc[mut_rates_literature['unit'] == 'SNV/site/year', col] = mut_rates_literature.loc[mut_rates_literature['unit'] == 'SNV/site/year', col].astype(float) * 1e6 ## transform to SNV/Mb/year
+mut_rates_literature['species'] = mut_rates_literature['Genus'].str[0] + mut_rates_literature['species']
 
 ## get a dict of the tp of infections in respect to hospital admission (note: only the clades with infectious isolates will be stated!)
 inf_day_dict = {'P0007_P07_Apittii-c1_240825': 50.89,
@@ -323,27 +334,20 @@ fontsize = 12
 markersize = 25
 ci_lower_idx = 0
 inf_color = '#d73027'
-tmrca_col = '#EAECCC' # '#F0E6B2' ## paul tol's Sunset/nightfall midpoint color schemes 
-mol_clock_col = {'Inferred': '#484848',   #'#696969', ## grey shades with same contrast ratio apart (8x30): https://dev.to/finnhvman/grayscale-color-palette-with-equal-contrast-ratios-2pgl
-                 'Species-specific': '#818181', #'#A9A9A9',
-                 'Genus-specific': '#c8c8c8'} #'#DCDCDC'}
-species_clock = {'A. pittii': 'Genus-specific', 
-                 'B. thetaiotaomicron': 'Genus-specific', 
-                 'E. hormaechei': 'Inferred', 
-                 'K. michiganensis': 'Genus-specific', 
-                 'E. coli': 'Species-specific', 
-                 'S. aureus': 'Species-specific'}
+tmrca_col = '#EAECCC'
+mol_clock_col = {'Applied': '#484848',
+                 'Alternative': '#c8c8c8'}
 
 ############################################################
 ############################################################
 ############################################################
 ## fetch files 
-files = glob.glob(os.path.expanduser('~/Nextcloud/keylab/projects/mf_2020_hap/labbook/data_analysis/2022/denovo_2024_08/analysis/backup/*/*/*_mol_clock_data_noinf.csv'))
-files_inf = glob.glob(os.path.expanduser('~/Nextcloud/keylab/projects/mf_2020_hap/labbook/data_analysis/2022/denovo_2024_08/analysis/backup/*/*/*_mol_clock_data_winf.csv'))
+files = glob.glob(os.path.expanduser('~/Nextcloud/keylab/projects/mf_2020_hap/labbook/data_analysis/2022/denovo_2024_08/analysis/*/*/*_mol_clock_data_noinf.csv'))
+files_inf = glob.glob(os.path.expanduser('~/Nextcloud/keylab/projects/mf_2020_hap/labbook/data_analysis/2022/denovo_2024_08/analysis/*/*/*_mol_clock_data_winf.csv'))
 
 ## subset data to certain date
-files = sorted([file for file in files if '2025-08-24' in file.split('/')[-1]])
-files_inf = sorted([file for file in files_inf if '2025-08-24' in file.split('/')[-1]])
+files = sorted([file for file in files if '2026-03-26' in file.split('/')[-1]])
+files_inf = sorted([file for file in files_inf if '2026-03-26' in file.split('/')[-1]])
 
 ############################################################
 ############################################################
@@ -360,11 +364,6 @@ for file in files:
     ## read in molecular clock _with_ infectious isolates
     file_inf = [file for file in files_inf if subj_spec in file][0]
     mol_clock_data_inf = read_mol_clock_data_file(file_inf)
-    
-    ## mol_clock_data[: ,0] = time since hospital admission of patient
-    ## mol_clock_data[: ,1] = time in days since first positive culture
-    ## mol_clock_data[: ,2] = number of SNVs to MRCA (inferred via treetime)
-    ## mol_clock_data[: ,3] = number of bases covered on the genome ≥ 8x
 
     unique_tps = set(mol_clock_data[:, 1]) ## get all unique dates since first observation of pathogen (without clinical dates!)
     
@@ -388,20 +387,10 @@ for file in files:
     mut_rate_dict = {}
     species_clade = subj_spec.split('_')[2]
     species = species_clade.split('-')[0]
-    try:
-        mut_rate_literature = mutationrates[species][0] * basescale
-        try:
-            mut_rate_ci95_literature = [ci * basescale for ci in mutationrates[species][1]]
-        except:
-            mut_rate_ci95_literature = [0, 0]
-    except:
-        mut_rate_literature = np.nan
-    
-
-    if np.isnan(mut_rate_literature) and np.isnan(mut_rate_obs):
-        print('No mutation rate found')
-        continue
-        
+    if species in mut_rates_literature['species'].values:
+        mut_rates_lit_spec = mut_rates_literature[mut_rates_literature['species']==species]
+    else:
+        mut_rates_lit_spec = pd.DataFrame(columns = ['species', 'Strain', 'mol_clock_pe', 'mol_clock_ci_l', 'mol_clock_ci_h'])
     ## check if there is any timepoint within ≤48 h (needed to account for rounding errors due to the use of integers (days!); cutoff need to be checked again manually for ≤24h!) which has more than the number of isolates required
     if first_inf_tp == first_inf_tp:
         if not any([(len(np.where(mol_clock_data[:, 1] == tp)[0]) >= req_isolate_num) & (tp <= first_inf_tp+2) for tp in unique_tps]): 
@@ -414,52 +403,84 @@ for file in files:
             continue
 
     ## calculate tmrca
-    tmp_mutation_rate_df = get_tmrca_per_tp(mol_clock_data, unique_tps, mut_rate_obs, mut_rate_obs_ci95, mut_rate_literature, mut_rate_ci95_literature, basescale, req_isolate_num, subj_spec, plot_histogram=True)
-
-    ## combine all data to one df
-    mutation_rate_df = pd.concat([mutation_rate_df, tmp_mutation_rate_df])
-
+    tmp_mutation_rate_obs_df = get_tmrca_per_tp(mol_clock_data, unique_tps, mut_rate_obs, mut_rate_obs_ci95, basescale, req_isolate_num, subj_spec, plot_histogram=True, mol_clock_type = 'observed', hist_plot_title = subj_spec)
+    tmp_mutation_rate_obs_df['Strain'] = 'observed'
+    mutation_rate_df = pd.concat([mutation_rate_df, tmp_mutation_rate_obs_df])
+    
+    for rowidx, mut_rate_strain in mut_rates_lit_spec.iterrows():
+        tmp_mutation_rate_obs_df = get_tmrca_per_tp(mol_clock_data, unique_tps, mut_rate_strain['mol_clock_pe'], [mut_rate_strain['mol_clock_ci_l'], mut_rate_strain['mol_clock_ci_h']], basescale, req_isolate_num, subj_spec, plot_histogram=True, mol_clock_type = 'literature', hist_plot_title = f'{subj_spec}\n{mut_rate_strain["paper"]}')
+        tmp_mutation_rate_obs_df['Strain'] = mut_rate_strain['Strain'] + '_' + mut_rate_strain['paper'] + '_' + str(mut_rate_strain.name)
+        mutation_rate_df = pd.concat([mutation_rate_df, tmp_mutation_rate_obs_df])
 mutation_rate_df = mutation_rate_df.reset_index(drop = True)
 
 ## plot per species just the first TP and its tmrca with repect to the infection 
 ## get first tps
-tmrca_spec_inf = mutation_rate_df.sort_values('timepoint').groupby('subj_spec').head(1)
+tmrca_spec_inf = mutation_rate_df.loc[mutation_rate_df.groupby('subj_spec')['timepoint'].transform('min').eq(mutation_rate_df['timepoint'])].reset_index(drop=True)
 
 tmrca_spec_inf = add_metadata_to_df(tmrca_spec_inf, inf_day_dict)
 
 ####################
 ## plot with all clades which have enough data 
-legend_info_tmrca = [Line2D([0], [0], marker = 'x', color = inf_color, linewidth = 0, markeredgewidth = 2, label = 'HAI\ndiagnosis', markersize = 8)]
+legend_info_tmrca = [Line2D([0], [0], marker = 'x', color = inf_color, linewidth = 0, markeredgewidth = 2, label = 'HAI\nonset', markersize = 8)]
 legend_info_tmrca += [plt.Rectangle((0,0),1,1, facecolor = tmrca_col, edgecolor = 'w', linewidth = 0, label = 'tMRCA of pathogenic\nlineage in microbiome\n(mean & 95% CI)')]
+legend_info_tmrca += [Line2D([0], [0], marker = 'o', color = mol_clock_col['Alternative'], markerfacecolor = mol_clock_col['Alternative'], markeredgecolor = 'k', markeredgewidth=0.2, linewidth = 2, label = 'tMRCA using an\nalternative molecular clock\n(mean & 95% CI)', markersize = 8)]
+
 
 legend_info_mol_clock = [Line2D([0], [0], linewidth = 0, label = 'Molecular clock\n(mean & 95% CI)')]
 for label, col in mol_clock_col.items():
-    legend_info_mol_clock += [Line2D([0], [0], marker = 'o', color = col, markerfacecolor = col, linewidth = 2, label = label, markersize = 8)]
+    legend_info_mol_clock += [Line2D([0], [0], marker = 'o', color = col, markerfacecolor = col, linewidth = 2, markeredgecolor = 'k', markeredgewidth=0.2, label = label, markersize = 8)]
 
-## plot with clades/lineages which contributed to inf and had enough data only
+## plot with clades which contributed to inf and had enough data only
 tmrca_spec_inf_clades = tmrca_spec_inf[~tmrca_spec_inf['inf_date'].isna()].copy()
 
 ## literature clock, for Ehormaechei --> inferred clock 
-tmrca_spec_inf_clades = combine_literature_inferred_clock_for_plot(tmrca_spec_inf_clades, ['E. hormaechei clade1 (P07)'], species_clock, mol_clock_col)
+tmrca_spec_inf_clades = tmrca_spec_inf_clades[tmrca_spec_inf_clades['tmrca_meanmut'].notna()]
 
 ## Removal from hypermutator candidates 
 candidate_hypermutators = pd.read_csv('~/Nextcloud/keylab/projects/mf_2020_hap/labbook/data_analysis/2022/denovo_2024_08/analysis/candidate_hypermutators_based_on_outgroup_background.csv')
 candidate_hypermutators = candidate_hypermutators.loc[candidate_hypermutators['is_candidate_hypermutator'] == True, 'genome'].values
 
-tmrca_spec_inf_clades_nohypmut = tmrca_spec_inf_clades[~tmrca_spec_inf_clades['subj_spec'].isin(candidate_hypermutators) | ~tmrca_spec_inf_clades['mut_rate_obs'].isna()]
+tmrca_spec_inf_clades_nohypmut = tmrca_spec_inf_clades[~tmrca_spec_inf_clades['subj_spec'].isin(candidate_hypermutators) | (tmrca_spec_inf_clades['mol_clock_type'] == 'observed')].reset_index(drop = True)
+tmrca_sel_set = {
+    ('E. hormaechei clade1 (P07)', 'observed'), 
+    ('S. aureus clade3 (P21)', 'ST97_Key et al 2023_5')
+}
 
-fig, axs = plt.subplots(figsize = (7.5, 6), nrows = 2, sharex = True, gridspec_kw={'height_ratios': [3, 1]})
+selected_tmrcas_bool = pd.Series(zip(tmrca_spec_inf_clades_nohypmut['spec_clade_subj_plt'], tmrca_spec_inf_clades_nohypmut['Strain'])).isin(tmrca_sel_set)
+tmrca_spec_inf_clades_nohypmut_sel = tmrca_spec_inf_clades_nohypmut[selected_tmrcas_bool]
+tmrca_spec_inf_clades_nohypmut_unsel = tmrca_spec_inf_clades_nohypmut[~selected_tmrcas_bool]
+tmrca_spec_inf_clades_nohypmut_unsel['study_year'] = tmrca_spec_inf_clades_nohypmut_unsel['Strain'].str.split(' ').str[-1].str.split('_').str[0]
+tmrca_spec_inf_clades_nohypmut_unsel = tmrca_spec_inf_clades_nohypmut_unsel.sort_values('study_year').reset_index(drop = True)
+
+## NOTE: The plot would need some flattening again! It could be done much more efficient and readable!
+
+fig, axs = plt.subplots(figsize = (6, 5), nrows = 2, sharex = True, gridspec_kw={'height_ratios': [3, 1]})
 ax = axs.flatten()
 ax[0].axhline(0, ls = '--', lw = 1, c = 'k', alpha = 0.5)
-ax[0].annotate(text = 'Hospital admission', xy = (4.4, 0.25), fontsize=fontsize, ha = 'right')
-ax[0].scatter(x= tmrca_spec_inf_clades_nohypmut['species'], y = tmrca_spec_inf_clades_nohypmut['inf_date'], linestyle='None', s = 100, marker='x', color = inf_color)
-ax[0].bar(x = tmrca_spec_inf_clades_nohypmut['species'], 
-            height = extract_listentry_pd_col(tmrca_spec_inf_clades_nohypmut['ci95_tmrca_fin'], 1) - extract_listentry_pd_col(tmrca_spec_inf_clades_nohypmut['ci95_tmrca_fin'], ci_lower_idx),
-            bottom = tmrca_spec_inf_clades_nohypmut['days_in_hosp'] - extract_listentry_pd_col(tmrca_spec_inf_clades_nohypmut['ci95_tmrca_fin'], 1),
-            color = tmrca_col, width = 0.65)
-ax[0].scatter(x= tmrca_spec_inf_clades_nohypmut['species'], y = tmrca_spec_inf_clades_nohypmut['days_in_hosp'] - tmrca_spec_inf_clades_nohypmut['tmrca_fin'], color = '#555555', linestyle='None', s = 1400, marker='_')
-ax[0].set_ylim((np.nanmin(tmrca_spec_inf_clades_nohypmut['days_in_hosp'] - extract_listentry_pd_col(tmrca_spec_inf_clades_nohypmut['ci95_tmrca_fin'], 1)) - 300,
-            np.nanmax(tmrca_spec_inf_clades_nohypmut['days_in_hosp'] - extract_listentry_pd_col(tmrca_spec_inf_clades_nohypmut['ci95_tmrca_fin'], ci_lower_idx)) + 150,
+ax[0].annotate(text = 'Hospital admission', xy = (1.4, 0.25), fontsize=fontsize, ha = 'right')
+ax[0].scatter(x= tmrca_spec_inf_clades_nohypmut_sel['species'], 
+              y = tmrca_spec_inf_clades_nohypmut_sel['inf_date'], 
+              linestyle='None', 
+              s = 100, 
+              marker='x', 
+              color = inf_color, 
+              zorder = 5)
+ax[0].bar(x = tmrca_spec_inf_clades_nohypmut_sel['species'], 
+            height = extract_listentry_pd_col(tmrca_spec_inf_clades_nohypmut_sel['tmrca_meanmut_ci95'], 1) - extract_listentry_pd_col(tmrca_spec_inf_clades_nohypmut_sel['tmrca_meanmut_ci95'], ci_lower_idx),
+            bottom = tmrca_spec_inf_clades_nohypmut_sel['days_in_hosp'] - extract_listentry_pd_col(tmrca_spec_inf_clades_nohypmut_sel['tmrca_meanmut_ci95'], 1),
+            color = tmrca_col, 
+            width = 0.65, 
+            zorder = 3)
+ax[0].scatter(x= tmrca_spec_inf_clades_nohypmut_sel['species'], 
+              y = tmrca_spec_inf_clades_nohypmut_sel['days_in_hosp'] - tmrca_spec_inf_clades_nohypmut_sel['tmrca_meanmut'], 
+              color = '#555555', 
+              linestyle='None', 
+              s = 3050, 
+              lw = 1, 
+              marker='_', 
+              zorder = 7)
+ax[0].set_ylim((np.nanmin(tmrca_spec_inf_clades_nohypmut['days_in_hosp'] - extract_listentry_pd_col(tmrca_spec_inf_clades_nohypmut['tmrca_meanmut_ci95'], 1)) - 300,
+            np.nanmax(tmrca_spec_inf_clades_nohypmut['days_in_hosp'] - extract_listentry_pd_col(tmrca_spec_inf_clades_nohypmut['tmrca_meanmut_ci95'], ci_lower_idx)) + 150,
             ))
 ax[0].set_ylabel('Time since hospital admission\n(in days)')
 ax[0].set_yscale('symlog')
@@ -468,44 +489,88 @@ ax[0].legend(handles = legend_info_tmrca, loc='center left', bbox_to_anchor=(1, 
 ax[0].set_ylabel(ax[0].get_ylabel(), fontsize=fontsize+1)
 ax[0].set_title('Acquisition time', loc='right', ha = 'right', fontsize=fontsize-2)
 
-ax[1].scatter(x= tmrca_spec_inf_clades_nohypmut['species'], y = tmrca_spec_inf_clades_nohypmut['mut_rate_fin'], linestyle='None', s = 35, lw = 1, marker='o', color = tmrca_spec_inf_clades_nohypmut['plt_color'], zorder = 10)
-ax[1].vlines(x = tmrca_spec_inf_clades_nohypmut['species'], 
-           ymin = extract_listentry_pd_col(tmrca_spec_inf_clades_nohypmut['ci95_mut_rate_fin'], 0),
-           ymax = extract_listentry_pd_col(tmrca_spec_inf_clades_nohypmut['ci95_mut_rate_fin'], 1),
-           color = tmrca_spec_inf_clades_nohypmut['plt_color'], lw = 2, zorder = 15)
+ax[1].scatter(x= tmrca_spec_inf_clades_nohypmut_sel['species'], 
+              y = tmrca_spec_inf_clades_nohypmut_sel['mut_rate'], 
+              linestyle='None', 
+              s = 30, 
+              marker='o',
+              edgecolor = 'k',
+              lw = 0.2, 
+              color = mol_clock_col['Applied'], 
+              zorder = 15)
+ax[1].vlines(x = tmrca_spec_inf_clades_nohypmut_sel['species'], 
+           ymin = extract_listentry_pd_col(tmrca_spec_inf_clades_nohypmut_sel['mut_rate_ci95'], 0),
+           ymax = extract_listentry_pd_col(tmrca_spec_inf_clades_nohypmut_sel['mut_rate_ci95'], 1),
+           color = mol_clock_col['Applied'], 
+           lw = 2, 
+           zorder = 15)
 ax[1].legend(handles = legend_info_mol_clock, loc='center left', bbox_to_anchor=(1, 0.5), fancybox=False, shadow=False, fontsize = fontsize)
 ax[1].set_yticks(np.arange( np.ceil(max( 
-                                    np.nanmax(extract_listentry_pd_col(tmrca_spec_inf_clades_nohypmut['ci95_mut_rate_fin'], 1)), 
-                                    np.nanmax(tmrca_spec_inf_clades_nohypmut['mut_rate_fin'])) 
+                                    np.nanmax(extract_listentry_pd_col(tmrca_spec_inf_clades_nohypmut['mut_rate_ci95'], 1)), 
+                                    np.nanmax(tmrca_spec_inf_clades_nohypmut['mut_rate'])) 
                                     + 1))) 
 ax[1].set_ylabel('Mutations/\nMb/year')
 ax[1].set_ylabel(ax[1].get_ylabel(), fontsize=fontsize+1)
 ax[1].set_title('Substitution rates', loc='right', ha = 'right', fontsize=fontsize-2)
+
+## add the additional molecular clocks which have been unselected 
+for spec in tmrca_spec_inf_clades_nohypmut_unsel['spec_clade_subj_plt']:
+    tmrca_add_mol_clocks_spec = tmrca_spec_inf_clades_nohypmut_unsel[tmrca_spec_inf_clades_nohypmut_unsel['spec_clade_subj_plt'] == spec].reset_index(drop = True)
+    x_idx = np.where(tmrca_spec_inf_clades_nohypmut_sel['spec_clade_subj_plt'] == spec)[0] ## get the x axis idx for the plot 
+    ## define the interspacing (-.4 to .4 with the mid zone (-.1 to .1) left empty)
+    num_additional_clocks = len(tmrca_add_mol_clocks_spec)
+    min_plot, max_plot, mid_free_l, mid_free_u = -0.25, 0.25, -0.05, 0.05
+    xregion_left = max_plot-min_plot-(mid_free_u-mid_free_l)
+    interspacing = xregion_left/num_additional_clocks
+    # positions in the compressed interval without the middle gap
+    compressed_x = np.linspace(min_plot, max_plot - (mid_free_u - mid_free_l), num_additional_clocks)
+    # shift points that fall to the right of the gap
+    x_positions = np.where(compressed_x >= mid_free_l,
+                            compressed_x + (mid_free_u - mid_free_l),
+                            compressed_x)
+    for data_idx, datapoint in tmrca_add_mol_clocks_spec.iterrows():
+        datapoints_x = x_idx+x_positions[data_idx]
+        ax[0].scatter(x = datapoints_x, 
+                        y = datapoint['days_in_hosp'] - datapoint['tmrca_meanmut'], 
+                        linestyle='None', 
+                        alpha = 0.6, 
+                        marker = 'o', 
+                        s = 12,
+                        color = mol_clock_col['Alternative'],
+                        edgecolor = 'k', 
+                        lw = 0.2,
+                        zorder = 10)
+        ax[0].vlines(x = datapoints_x, 
+                     ymin = datapoint['days_in_hosp'] - datapoint['tmrca_meanmut_ci95'][0],
+                     ymax = datapoint['days_in_hosp'] - datapoint['tmrca_meanmut_ci95'][1],
+                     linestyle='-', 
+                     lw = 1,
+                     alpha = 0.6, 
+                     color = mol_clock_col['Alternative'],
+                     zorder = 8)
+        ax[1].scatter(x = datapoints_x, 
+                        y = datapoint['mut_rate'], 
+                        linestyle='None', 
+                        alpha = 0.6, 
+                        marker = 'o', 
+                        s = 12,
+                        color = mol_clock_col['Alternative'],
+                        edgecolor = 'k', 
+                        lw = 0.2,
+                        zorder = 10)
+        ax[1].vlines(x = datapoints_x, 
+                     ymin = datapoint['mut_rate_ci95'][0],
+                     ymax = datapoint['mut_rate_ci95'][1],
+                     linestyle='-', 
+                     lw = 1,
+                     alpha = 0.6, 
+                     color = mol_clock_col['Alternative'],
+                     zorder = 8)
+ax[1].set_ylim(0, None)
 [ax[idx].spines['top'].set_visible(False) for idx, a in enumerate(ax)]
 [ax[idx].spines['right'].set_visible(False) for idx, a in enumerate(ax)]
-plt.xticks(rotation = 90, rotation_mode = 'anchor', ha = 'right', va = 'center', fontstyle='italic')
 plt.tick_params(labelsize=fontsize)
 plt.tight_layout()
-plt.savefig(os.path.expanduser(f'~/Nextcloud/keylab/projects/mf_2020_hap/labbook/data_analysis/figures/2025_06_09_tmrca_nonhypermut_patho_clades_min8isolates_lit_clocks_excEhclock_wclocks_10kMCsim.svg'))
+plt.savefig(os.path.expanduser(f'~/Nextcloud/keylab/projects/mf_2020_hap/labbook/data_analysis/figures/2026_03_05_tmrca_nonhypermut_patho_clades_min8isolates_lit_clocks_excEhclock_wclocks_10kMCsim.svg'))
 
-
-## to get the exact dates when in respect to hospitalization what happened: 
-tmrca_spec_inf_clades_nohypmut_sub = tmrca_spec_inf_clades_nohypmut[['species', 'inf_date', 'days_in_hosp', 'tmrca_fin', 'ci95_tmrca_fin']].copy()
-tmrca_spec_inf_clades_nohypmut_sub['mrca_date_since_hosp'] = tmrca_spec_inf_clades_nohypmut['days_in_hosp'] - tmrca_spec_inf_clades_nohypmut['tmrca_fin']
-tmrca_spec_inf_clades_nohypmut_sub['ci_lower_mrca_date_since_hosp'] = tmrca_spec_inf_clades_nohypmut['days_in_hosp'] - extract_listentry_pd_col(tmrca_spec_inf_clades_nohypmut_sub['ci95_tmrca_fin'], 0)
-tmrca_spec_inf_clades_nohypmut_sub['ci_upper_mrca_date_since_hosp'] = tmrca_spec_inf_clades_nohypmut['days_in_hosp'] - extract_listentry_pd_col(tmrca_spec_inf_clades_nohypmut_sub['ci95_tmrca_fin'], 1)
-tmrca_spec_inf_clades_nohypmut_sub.loc[tmrca_spec_inf_clades_nohypmut_sub['ci_lower_mrca_date_since_hosp'].isna(), 'ci_lower_mrca_date_since_hosp'] = tmrca_spec_inf_clades_nohypmut_sub.loc[tmrca_spec_inf_clades_nohypmut_sub['ci_lower_mrca_date_since_hosp'].isna(), 'days_in_hosp']
-tmrca_spec_inf_clades_nohypmut_sub.loc[tmrca_spec_inf_clades_nohypmut_sub['ci_upper_mrca_date_since_hosp'].isna(), 'ci_upper_mrca_date_since_hosp'] = tmrca_spec_inf_clades_nohypmut_sub.loc[tmrca_spec_inf_clades_nohypmut_sub['ci_upper_mrca_date_since_hosp'].isna(), 'days_in_hosp']
-
-tmrca_spec_inf_clades_nohypmut_sub['mrca_date_before_inf'] = tmrca_spec_inf_clades_nohypmut_sub['mrca_date_since_hosp'] - tmrca_spec_inf_clades_nohypmut_sub['inf_date']
-tmrca_spec_inf_clades_nohypmut_sub['ci_lower_mrca_date_before_inf'] = tmrca_spec_inf_clades_nohypmut_sub['ci_lower_mrca_date_since_hosp'] - tmrca_spec_inf_clades_nohypmut_sub['inf_date']
-
-tmrca_spec_inf_clades_nohypmut_sub['mrca_date_since_hosp_cilower'] =  tmrca_spec_inf_clades_nohypmut['days_in_hosp'] - extract_listentry_pd_col(tmrca_spec_inf_clades_nohypmut['ci95_tmrca_fin'], 0)
-tmrca_spec_inf_clades_nohypmut_sub['mrca_date_since_hosp_cihigher'] =  tmrca_spec_inf_clades_nohypmut['days_in_hosp'] - extract_listentry_pd_col(tmrca_spec_inf_clades_nohypmut['ci95_tmrca_fin'], 1)
-
-for rowidx, row in tmrca_spec_inf_clades_nohypmut_sub.iterrows():
-    print(f"{row['species']} was first observed {row['days_in_hosp']} days post hospitalization and estimated to be acquired {round(row['mrca_date_since_hosp'], 1)} days (CI: {round(row['mrca_date_since_hosp_cilower'], 1)}-{round(row['mrca_date_since_hosp_cihigher'], 1)}) post hospitalization. The inferred MRCA predates the infection onset by {round(row['mrca_date_before_inf'], 1)} days.")
-
-## correlate molecular clocks with tmrca values
-tmrca_spec_inf_clades_nohypmut[['mut_rate_fin', 'tmrca_fin']] = tmrca_spec_inf_clades_nohypmut[['mut_rate_fin', 'tmrca_fin']].astype(float)
-print(stats.spearmanr(tmrca_spec_inf_clades_nohypmut['mut_rate_fin'], tmrca_spec_inf_clades_nohypmut['tmrca_fin']))
+print(tmrca_spec_inf_clades_nohypmut_unsel[['Strain', 'mut_rate', 'mut_rate_ci95']].to_string(index = False))

@@ -78,6 +78,8 @@ specimenLog = pd.read_csv(specimenLog_file)
 
 ## get goodpos based CMT 
 files = glob.glob(os.path.expanduser('~/Nextcloud/keylab/projects/mf_2020_hap/labbook/data_analysis/2022/refbased_2024_08/analysis/P0*/*/2025-08-12*_goodpos_cmt.npz'))
+## add the across patient CMTs
+files += glob.glob(os.path.expanduser('~/Nextcloud/keylab/projects/mf_2020_hap/labbook/data_analysis/2022/refbased_2024_08/analysis/across_patients*/*/*_goodpos_cmt.npz'))    
 
 ## sanity check 
 subject_species =  sorted([file.split('/')[-3] for file in files])
@@ -87,110 +89,164 @@ if len(subject_species) != len(set(subject_species)):
 sample_name_dict = {}
 snp_diff_df = pd.DataFrame()
 snp_diff_pm_df = pd.DataFrame()
+snp_diff_acrosspat_df = pd.DataFrame()
 cum_sum_smpls = 0
 for file in files:
     subject_species = file.split('/')[-3]
     goodpos_cmt_dict = load_goodpos_cmt_npz_file(file)
     calls = goodpos_cmt_dict['calls']
     sampleNames = goodpos_cmt_dict['sampleNames']
+    patient_ids = goodpos_cmt_dict['patients']
     kitdate = np.array([f'20{str(date)[:2]}-{str(date)[-4:-2]}-{str(date)[-2:]}' if date != 0 else '' for date in goodpos_cmt_dict['kit_date']], dtype=np.datetime64) ## convert to time
     ## exclude outgroups and ref if in cmt:
     ingroup_idx = [idx for idx, smpl in enumerate(sampleNames) if not '_GCA_' in smpl and not '_GCF_' in smpl and not '_ASM_' in smpl and not '_ref' in smpl]
     sampleNames = sampleNames[ingroup_idx]
     calls = calls[:, ingroup_idx]
+    patient_ids = patient_ids[ingroup_idx]
     if 'P0010_Kmichiganensis' in subject_species:
         rm_gastric_idx = [idx for idx, smpl in enumerate(sampleNames) if not 'G00040_' in smpl]
         sampleNames = sampleNames[rm_gastric_idx]
+        patient_ids = patient_ids[rm_gastric_idx]
         calls = calls[:, rm_gastric_idx]
     print(subject_species)
     print(f'Observed {len(sampleNames)} samples in data set')
     cum_sum_smpls += len(sampleNames)
     sample_name_dict[subject_species] = sampleNames
 
-    ###############
-    ## calculate pairwise SNP diff
-    snp_diff_l = []
-    smpl_i = []
-    smpl_j = []
-    t_diff = []
+    if not 'across_patients' in subject_species:
+        ###############
+        ## calculate pairwise SNP diff
+        snp_diff_l = []
+        smpl_i = []
+        smpl_j = []
+        t_diff = []
 
-    for i, j in itertools.combinations(range(np.shape(calls)[1]), 2):
-        diff_nt = (calls[:, i] != calls[:, j])
-        no_undef_nt_i = (calls[:, i] != 4)
-        no_undef_nt_j = (calls[:, j] != 4)
-        snp_diff_l.append(np.sum(diff_nt & no_undef_nt_i & no_undef_nt_j))
-        t_diff.append(abs((kitdate[i] - kitdate[j]) / np.timedelta64(1, 'D')))
-        smpl_i.append(sampleNames[i])
-        smpl_j.append(sampleNames[j])
+        for i, j in itertools.combinations(range(np.shape(calls)[1]), 2):
+            diff_nt = (calls[:, i] != calls[:, j])
+            no_undef_nt_i = (calls[:, i] != 4)
+            no_undef_nt_j = (calls[:, j] != 4)
 
-    snp_diff_tmp_df = pd.DataFrame({'subject_species': [subject_species]*len(snp_diff_l), 'sample_1': smpl_i, 'sample_2': smpl_j, 'snp_diff': snp_diff_l, 'time_diff': t_diff})
-    
-    ###############
-    ## identify pathogenic and nonpathogenic isolates
-     
-    ## get pathogenic and non pathogenic isolates
-    ## exclude gastric juice samples as they are not pathogenic nor are considered in pilot study to colonize consistently the stomach!
-    smpl_pathogenic = []
-    smpl_mbiome = []
+            snp_diff_l.append(np.sum(diff_nt & no_undef_nt_i & no_undef_nt_j))
+            t_diff.append(abs((kitdate[i] - kitdate[j]) / np.timedelta64(1, 'D')))
+            smpl_i.append(sampleNames[i])
+            smpl_j.append(sampleNames[j])
 
-    for i, smpl in enumerate(sampleNames):
-        if not '_GCA_' in smpl and not '_GCF_' in smpl and not '_ASM_' in smpl:
-            if specimenLog.loc[specimenLog['ID'] == smpl, 'kit'].values[0][0] in ['B', 'L', 'U']:
-                smpl_pathogenic.append(i)
-            elif specimenLog.loc[specimenLog['ID'] == smpl, 'kit'].values[0][0] == 'K':
-                smpl_mbiome.append(i)
-            elif specimenLog.loc[specimenLog['ID'] == smpl, 'kit'].values[0][0] == 'G':
-                print('Gastric juice sample. Excluding this sample for SNP differences in pathogen to mbiome pair')
-            else:
-                print(f'{smpl} not in specimenLog file')
-    
-    ###############
-    ## add metadata about pathogenic/non-clinical isolates to df
-    s1_is_pathogen = snp_diff_tmp_df['sample_1'].isin(sampleNames[smpl_pathogenic])
-    s2_is_pathogen = snp_diff_tmp_df['sample_2'].isin(sampleNames[smpl_pathogenic])
-    snp_diff_tmp_df['s1_type'] = np.where(s1_is_pathogen, 'pathogen', 'mbiome')
-    snp_diff_tmp_df['s2_type'] = np.where(s2_is_pathogen, 'pathogen', 'mbiome')
-    
-    snp_diff_df = pd.concat([snp_diff_df, snp_diff_tmp_df])
-    
-    ###############
-    ## calculate minimal SNP difference for all pathogenic vs all mbiome isolates
-
-    snp_diff_pm_l_min = []
-    smpl_p_min = []
-    smpl_m_min = []
-    t_diff_min = []
-
-    for path_idx in smpl_pathogenic:
+        snp_diff_tmp_df = pd.DataFrame({'subject_species': [subject_species]*len(snp_diff_l), 'sample_1': smpl_i, 'sample_2': smpl_j, 'snp_diff': snp_diff_l, 'time_diff': t_diff})
         
-        snp_diff_pm_l = [] ## append all data, and extract for each pathogen then the minimum distance to any of the mbiome samples 
-        smpl_m = [] ## append all data, and extract for each pathogen the sample name with minimum distance at the end
-        for mbiome_idx in smpl_mbiome:
-            diff_nt = (calls[:, path_idx] != calls[:, mbiome_idx])
-            no_undef_nt_i = (calls[:, path_idx] != 4)
-            no_undef_nt_j = (calls[:, mbiome_idx] != 4)
-            snp_diff_pm_l.append(np.sum(diff_nt & no_undef_nt_i & no_undef_nt_j))
-            smpl_m.append(sampleNames[mbiome_idx])
-        ## get the id with the minimum distance
-        if not subject_species.startswith(('P0007_Paeruginosa', 'P0021_Paeruginosa')):
-            min_dist_idx = np.argmin(snp_diff_pm_l)
-            snp_diff_pm_l_min.append(snp_diff_pm_l[min_dist_idx])
-            t_diff_min.append(abs((kitdate[path_idx] - kitdate[min_dist_idx]) / np.timedelta64(1, 'D')))
-            smpl_p_min.append(sampleNames[path_idx])
-            smpl_m_min.append(smpl_m[min_dist_idx])
-        else:
-            snp_diff_pm_l_min.append(np.nan)
-            t_diff_min.append(np.nan)
-            smpl_p_min.append(np.nan)
-            smpl_m_min.append(np.nan)
+        ###############
+        ## identify pathogenic and nonpathogenic isolates
+        
+        ## get pathogenic and non pathogenic isolates
+        ## exclude gastric juice samples as they are not pathogenic nor are considered in pilot study to colonize consistently the stomach!
+        smpl_pathogenic = []
+        smpl_mbiome = []
 
-    tmp_pm_df = pd.DataFrame({'subject_species': [subject_species]*len(snp_diff_pm_l_min), 'sample_pathogen': smpl_p_min, 'sample_mbiome': smpl_m_min, 'snp_diff': snp_diff_pm_l_min, 'time_diff': t_diff_min})
-    snp_diff_pm_df = pd.concat([snp_diff_pm_df, tmp_pm_df])
-    
+        for i, smpl in enumerate(sampleNames):
+            if not '_GCA_' in smpl and not '_GCF_' in smpl and not '_ASM_' in smpl:
+                if specimenLog.loc[specimenLog['ID'] == smpl, 'kit'].values[0][0] in ['B', 'L', 'U']:
+                    smpl_pathogenic.append(i)
+                elif specimenLog.loc[specimenLog['ID'] == smpl, 'kit'].values[0][0] == 'K':
+                    smpl_mbiome.append(i)
+                elif specimenLog.loc[specimenLog['ID'] == smpl, 'kit'].values[0][0] == 'G':
+                    print('Gastric juice sample. Excluding this sample for SNP differences in pathogen to mbiome pair')
+                else:
+                    print(f'{smpl} not in specimenLog file')
+
+        ###############
+        ## add metadata about pathogenic/non-clinical isolates to df
+        s1_is_pathogen = snp_diff_tmp_df['sample_1'].isin(sampleNames[smpl_pathogenic])
+        s2_is_pathogen = snp_diff_tmp_df['sample_2'].isin(sampleNames[smpl_pathogenic])
+        snp_diff_tmp_df['s1_type'] = np.where(s1_is_pathogen, 'pathogen', 'mbiome')
+        snp_diff_tmp_df['s2_type'] = np.where(s2_is_pathogen, 'pathogen', 'mbiome')
+        
+        snp_diff_df = pd.concat([snp_diff_df, snp_diff_tmp_df])
+        
+        ###############
+        ## calculate minimal SNP difference for all pathogenic vs all mbiome isolates
+
+        snp_diff_pm_l_all = []
+        snp_diff_pm_l_min = []
+        smpl_p_min = []
+        smpl_m_min = []
+        t_diff_pm_all = []
+        t_diff_min = []
+
+        for path_idx in smpl_pathogenic:
+            
+            snp_diff_pm_l = [] ## append all data, and extract for each pathogen then the minimum distance to any of the mbiome samples 
+            smpl_m = [] ## append all data, and extract for each pathogen the sample name with minimum distance at the end
+            for mbiome_idx in smpl_mbiome:
+                ## restrict to only mbiome samples which are before or 1 day after! == before or during inf. --> need to adjust to hour wise comparison with cutoff of 3h!
+                if (kitdate[mbiome_idx] - min(kitdate[smpl_pathogenic])) / np.timedelta64(1, 'D') <= 1:
+                    diff_nt = (calls[:, path_idx] != calls[:, mbiome_idx])
+                    no_undef_nt_i = (calls[:, path_idx] != 4)
+                    no_undef_nt_j = (calls[:, mbiome_idx] != 4)
+                    snp_diff_pm_l.append(np.sum(diff_nt & no_undef_nt_i & no_undef_nt_j))
+                    snp_diff_pm_l_all.append(np.sum(diff_nt & no_undef_nt_i & no_undef_nt_j))
+                    t_diff_pm_all.append(abs((kitdate[path_idx] - kitdate[mbiome_idx]) / np.timedelta64(1, 'D')))
+                    smpl_m.append(sampleNames[mbiome_idx])
+                else:
+                    diff_nt = (calls[:, path_idx] != calls[:, mbiome_idx])
+                    no_undef_nt_i = (calls[:, path_idx] != 4)
+                    no_undef_nt_j = (calls[:, mbiome_idx] != 4)
+                    snp_diff_pm_l.append(np.sum(diff_nt & no_undef_nt_i & no_undef_nt_j))
+                    snp_diff_pm_l_all.append(np.sum(diff_nt & no_undef_nt_i & no_undef_nt_j))
+                    t_diff_pm_all.append(abs((kitdate[path_idx] - kitdate[mbiome_idx]) / np.timedelta64(1, 'D')))
+                    smpl_m.append(sampleNames[mbiome_idx])
+            ## get the id with the minimum distance
+            if not subject_species.startswith(('P0007_Paeruginosa', 'P0021_Paeruginosa')):
+                min_dist_idx = np.argmin(snp_diff_pm_l)
+                snp_diff_pm_l_min.append(snp_diff_pm_l[min_dist_idx])
+                t_diff_min.append(abs((kitdate[path_idx] - kitdate[min_dist_idx]) / np.timedelta64(1, 'D')))
+                smpl_p_min.append(sampleNames[path_idx])
+                smpl_m_min.append(smpl_m[min_dist_idx])
+            else:
+                snp_diff_pm_l_min.append(np.nan)
+                t_diff_min.append(np.nan)
+                smpl_p_min.append(np.nan)
+                smpl_m_min.append(np.nan)
+
+        tmp_pm_df = pd.DataFrame({'subject_species': [subject_species]*len(snp_diff_pm_l_min), 'sample_pathogen': smpl_p_min, 'sample_mbiome': smpl_m_min, 'snp_diff': snp_diff_pm_l_min, 'time_diff': t_diff_min})
+        snp_diff_pm_df = pd.concat([snp_diff_pm_df, tmp_pm_df])
+    else:
+        ## calculate the pairwise SNV difference between isolates from different patients 
+        ## group the isolates to their patient specific group
+        unique_patients = np.unique([p for p in patient_ids if p != None])
+        smpl_idx_to_pat_dict = {str(pat): np.where(patient_ids == pat)[0] for pat in unique_patients}
+        
+        ###############
+        ## calculate SNV difference between all isolates of every patient combination
+
+        snp_diff_acrosspatients_l = []
+        smpl_pat1 = []
+        smpl_pat2 = []
+        pat1_l = []
+        pat2_l = []
+        t_diff_acrosspatients = []
+
+        for pat1, pat2 in itertools.combinations(unique_patients, 2):
+            for smpl_idx_pat1 in smpl_idx_to_pat_dict[pat1]:
+                for smpl_idx_pat2 in smpl_idx_to_pat_dict[pat2]:
+                    
+                    diff_nt = (calls[:, smpl_idx_pat1] != calls[:, smpl_idx_pat2])
+                    no_undef_nt_smplpat1 = (calls[:, smpl_idx_pat1] != 4)
+                    no_undef_nt_smplpat1 = (calls[:, smpl_idx_pat2] != 4)
+
+                    snp_diff_acrosspatients_l.append(np.sum(diff_nt & no_undef_nt_smplpat1 & no_undef_nt_smplpat1))
+                    t_diff_acrosspatients.append(abs((kitdate[smpl_idx_pat1] - kitdate[smpl_idx_pat2]) / np.timedelta64(1, 'D')))
+                    pat1_l.append(pat1)
+                    pat2_l.append(pat2)
+                    smpl_pat1.append(sampleNames[smpl_idx_pat1])
+                    smpl_pat2.append(sampleNames[smpl_idx_pat2])
+
+        snp_diff_acrosspat_tmp_df = pd.DataFrame({'subject_species': [subject_species]*len(snp_diff_acrosspatients_l), 'pat1': pat1_l, 'pat2': pat2_l, 'sample_1': smpl_pat1, 'sample_2': smpl_pat2, 'snp_diff': snp_diff_acrosspatients_l, 'time_diff': t_diff_acrosspatients})
+        snp_diff_acrosspat_df = pd.concat([snp_diff_acrosspat_df, snp_diff_acrosspat_tmp_df])
+
 print(f'Calculated pairwise SNP difference on {cum_sum_smpls} samples in total.')
 
 snp_diff_df = snp_diff_df.reset_index(drop = True)
 snp_diff_pm_df = snp_diff_pm_df.reset_index(drop = True)
+snp_diff_acrosspat_df = snp_diff_acrosspat_df.reset_index(drop = True)
 snp_diff_df['color'] = np.where(snp_diff_df['snp_diff'] < 100, 'close', 'distant')
 
 ## plt SNP differences between all isolates and on top all pathogenic isolates and their closest mbiome sample (across all pathogenic isolates!)
@@ -230,7 +286,31 @@ for legend in ['nolegend', 'wlegend']:
     plt.tight_layout()
     plt.savefig(os.path.expanduser(f'~/Nextcloud/keylab/projects/mf_2020_hap/labbook/data_analysis/figures/2025_06_09_pairwise_SNP_diff_path_vs_mbiome_refbased_all_specs_log{name_include}_{legend}.pdf'))
     plt.savefig(os.path.expanduser(f'~/Nextcloud/keylab/projects/mf_2020_hap/labbook/data_analysis/figures/2025_06_09_pairwise_SNP_diff_path_vs_mbiome_refbased_all_specs_log{name_include}_{legend}.svg'))
-        
+
+##########
+## plot the snv distances across patients for those where multple infections have happened
+
+figsize = (4.75, 3)
+fig, ax = plt.subplots(figsize = figsize)
+sns.histplot(data = snp_diff_acrosspat_df, x = 'snp_diff', binwidth = large_stepsize, color = 'lightgrey', alpha = 1,
+            edgecolor = 'none', ax = ax)
+ax.set_yscale('symlog', linthresh=5)
+ax.set_xscale('symlog', linthresh=1)
+ax.axvline(x = 30, lw = 0.5, ls = '--', c = 'black')
+ax.set_xlim((0.75, ax.xaxis.get_view_interval()[1]*1.2))
+for axis in [ax.xaxis, ax.yaxis]:
+    axis.set_major_formatter(ScalarFormatter())
+    axis.get_major_formatter().set_scientific(False)
+    axis.get_major_formatter().set_useOffset(False)
+    max_val_axis = int(np.ceil(np.log10(axis.get_view_interval()[1]))) ## the max log base of the axis to set minor ticks in that range
+    axis.set_minor_locator(FixedLocator([k * 10**n for n in range(max_val_axis) for k in range(1, 10)])) ## set minor ticks for all integer values (remove minor ticks < 1!)
+ax.set_xlabel('Interhost pairwise SNV differences\nper species')
+ax.spines['right'].set_visible(False)
+ax.spines['top'].set_visible(False)
+plt.tight_layout()
+plt.savefig(os.path.expanduser(f'~/Nextcloud/keylab/projects/mf_2020_hap/labbook/data_analysis/figures/2025_11_26_pairwise_SNP_diff_across_patients{name_include}.pdf'))
+plt.savefig(os.path.expanduser(f'~/Nextcloud/keylab/projects/mf_2020_hap/labbook/data_analysis/figures/2025_11_26_pairwise_SNP_diff_across_patients{name_include}.svg'))
+
 ## plot the distance within each timepoint vs across timepoints for pathogens
 s1_is_pathogen = (snp_diff_df['s1_type'] == 'pathogen')
 s2_is_pathogen = (snp_diff_df['s2_type'] == 'pathogen')
@@ -356,5 +436,3 @@ for file in files:
             for sample in lineage:
                 if (sample in good_samples):
                     fo.write(f'{sample}\n')
-
-## to inlcude ST in assembly names curate them manually as this is not yet implemented!

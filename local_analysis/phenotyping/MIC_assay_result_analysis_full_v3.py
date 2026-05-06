@@ -80,6 +80,7 @@ metadata = metadata.drop(['Patient', 'Species'], axis = 1)
 ehorm_mic = pd.merge(ehorm_mic, metadata, how = 'left', on = 'ID')
 
 ## generate long df for plotting and remove nans
+ehorm_mic['ID'] = ehorm_mic['ID'].replace('L00071_02_1', 'L00071_02_1_S3') ## change to actual used isolate --> streak 3
 ehorm_mic['AB'] = ehorm_mic['AB'].replace('Ceftazidim', 'Ceftazidime').replace('Cefotaxim', 'Cefotaxime').replace('Piperacillin/Tazobactam', 'Piperacillin/\nTazobactam')
 ehorm_mic = ehorm_mic[(~ehorm_mic['MIC'].isna()) & (ehorm_mic['MIC'] != '-')]
 ehorm_mic['MIC'] = ehorm_mic['MIC'].astype(str).str.replace('>', '').astype(float)
@@ -112,7 +113,7 @@ eucast_breakpoints = {'Piperacillin/\nTazobactam': 8,
 ## Load SNPs
 ################################################
 ## update genotypes from metadata file to ensure validity & get frequency of a given genotype
-snp_table = pd.read_csv('~/Nextcloud/keylab/projects/mf_2020_hap/labbook/data_analysis/2022/denovo_2024_08/analysis/backup/P0007_P07_Ehormaechei-c1_240825/2025_03_10_P07_Ehormaechei-c1_240825/snp_table.csv')
+snp_table = pd.read_csv('~/Nextcloud/keylab/projects/mf_2020_hap/labbook/data_analysis/2022/denovo_2024_08/analysis/backup/P0007_P07_Ehormaechei-c1_240825/2026_03_26_P07_Ehormaechei-c1_240825/snp_table.csv')
 non_isolate_cols = ['chr', 'pos', 'type', 'muts', 'locustag', 'gene', 'loc1', 'loc2', 'strand', 'product', 'nt_pos', 'aa_pos', 'nt_ref', 'nt_anc', 'nt_alt']
 isolate_cols = [col for col in snp_table.columns if col not in non_isolate_cols]
 isolate_to_tp_dict = {isolate_col.split('__')[-1]: isolate_col.split('_')[1] for isolate_col in isolate_cols}
@@ -160,6 +161,7 @@ for isolate in isolate_cols:
             mut = mut.replace('gyrA[F83S]', 'gyrA[S83F]').replace('gyrA[F83Y]', 'gyrA[S83Y]').replace(';', '|') ## give correct orientation to ancestral not reference!
             genotype_dict[isolate_id].append(mut)
 genotype_dict_string = {gt: '; '.join(muts) for gt, muts in genotype_dict.items()}
+genotype_dict_string['L00071_02_1_S3'] = 'fimZ[F126L]; citG[L68Q]' ## fix from base call & initial isolate seq
 
 ehorm_mic['genotype'] = ehorm_mic['ID'].map(genotype_dict_string)
 
@@ -167,9 +169,9 @@ ehorm_mic['genotype'] = ehorm_mic['ID'].map(genotype_dict_string)
 ################################################
 ## Load Indels
 ################################################
-indel_table = pd.read_csv('~/Nextcloud/keylab/projects/mf_2020_hap/labbook/data_analysis/2022/denovo_2024_08/analysis/backup/P0007_P07_Ehormaechei-c1_240825/2024_10_09_P07_Ehormaechei-c1_240825/indel_table.csv')
+indel_table = pd.read_csv('~/Nextcloud/keylab/projects/mf_2020_hap/labbook/data_analysis/2022/denovo_2024_08/analysis/backup/P0007_P07_Ehormaechei-c1_240825/2026_03_26_P07_Ehormaechei-c1_240825/indel_table.csv')
 
-## add ampD genptypes which have been additionally identified 
+## add ampD genotypes which have been additionally identified
 ## positions are nt positions!
 additional_ampD_indels =  {'P07_1149': 'ampD_480',
                             'P07_1049': 'ampD_279',
@@ -182,9 +184,10 @@ indel_table_metadata = ['gene_num', 'gene_num_global', 'chr', 'pos', 'chr_bounda
                         'num_isolates', 'gene1', 'locustag1', 'orthologtag1', 'product1', 'distance1', 'gene2', 'locustag2', 'orthologtag2', 'product2', 'distance2']
 indel_table_metadata_avail = [col for col in indel_table.columns if col in indel_table_metadata]
 indel_table_samplecol = [col for col in indel_table.columns if col not in indel_table_metadata]
-indel_table.loc[indel_table['gene'].isna(), 'gene'] = indel_table.loc[indel_table['gene'].isna(), 'gene1'] + '|' + indel_table.loc[indel_table['gene'].isna(), 'gene2']
-indel_table.loc[indel_table['locustag'].isna(), 'locustag'] = (indel_table.loc[indel_table['locustag'].isna(), 'locustag1'] + ':' + indel_table.loc[indel_table['locustag'].isna(), 'distance1'].astype(str) + '|' + 
-                                                        indel_table.loc[indel_table['locustag'].isna(), 'locustag2'] + ':' + indel_table.loc[indel_table['locustag'].isna(), 'distance2'].astype(str))
+if 'gene1' in indel_table.columns:
+    indel_table.loc[indel_table['gene'].isna(), 'gene'] = indel_table.loc[indel_table['gene'].isna(), 'gene1'] + '|' + indel_table.loc[indel_table['gene'].isna(), 'gene2']
+    indel_table.loc[indel_table['locustag'].isna(), 'locustag'] = (indel_table.loc[indel_table['locustag'].isna(), 'locustag1'] + ':' + indel_table.loc[indel_table['locustag'].isna(), 'distance1'].astype(str) + '|' + 
+                                                            indel_table.loc[indel_table['locustag'].isna(), 'locustag2'] + ':' + indel_table.loc[indel_table['locustag'].isna(), 'distance2'].astype(str))
 
 for row_idx, row in indel_table.iterrows():
     new_gene_tag = ''
@@ -208,6 +211,7 @@ for col in cols_to_explode_on:
 indel_table_exploded = indel_table.explode(cols_to_explode_on).reset_index(drop = True)
 for col in indel_table_samplecol:
     indel_table_exploded[col] = np.where(indel_table_exploded[col] == indel_table_exploded['indel_alt'], indel_table_exploded['alt_stop'].values, np.nan)
+indel_table_exploded['indel_pos_start'] = indel_table_exploded['indel_pos_start'].fillna('').str.replace(r'.*\(', '', regex=True).str.replace(r'\)', '', regex = True).astype(int)
 indel_table_exploded['genotype'] = indel_table_exploded['gene'] + '_' + indel_table_exploded['indel_pos_start'].astype(str) + '_' + (indel_table_exploded.groupby(['chr', 'pos'])['indel_ref'].cumcount()+1).astype(str)
 ## generate dict of samples which have the indel genotypes as values
 indel_table_exploded_long = indel_table_exploded[['genotype'] + indel_table_samplecol].melt('genotype')
@@ -268,8 +272,7 @@ ehorm_mic['MIC'] = np.log2(ehorm_mic['MIC'].astype(str).str.replace('>', '').ast
 snv_indel_marker = {'SNV': 'o', 'Indel': 's'}
 snv_indel_marker_sizes = {'SNV': 100, 'Indel': 100}
 
-
-exclude_mpip = True
+exclude_mpip = False
 unique_days = sorted(ehorm_mic['colonization_days'].unique())
 
 if exclude_mpip:
@@ -309,13 +312,11 @@ genotype_to_idx = {gt: idx for idx, gt in enumerate((snv_mut+indel_mut)[::-1])}
 plt_df_gt_to_d['genotype_all_s'] = plt_df_gt_to_d['genotype_all'].str.replace(r'; $', '', regex = True).str.replace(r'; ', ';', regex = True).str.split(';')
 plt_df_gt_to_d = plt_df_gt_to_d.explode(['genotype_all_s']).reset_index(drop = True) 
 plt_df_gt_to_d = plt_df_gt_to_d.drop_duplicates(subset=['colonization_days', 'genotype_all_s', 'genotype_all'])
-
 plt_df_gt_to_d['mutated_gene'] = plt_df_gt_to_d['genotype_all_s'].str.split('[').str[0].str.split('_').str[0] ## get gene name
 plt_df_gt_to_d.loc[plt_df_gt_to_d['genotype_all_s'].str.contains('\\['), 'mut_pos'] = '[' + plt_df_gt_to_d.loc[plt_df_gt_to_d['genotype_all_s'].str.contains('\\['), 'genotype_all_s'].str.split('[').str[-1] ## extract SNV position in protein
-plt_df_gt_to_d.loc[plt_df_gt_to_d['genotype_all_s'].str[4] == '_', 'mut_pos'] = (plt_df_gt_to_d.loc[plt_df_gt_to_d['genotype_all_s'].str[4] == '_', 'genotype_all_s'].str.split('_').str[1].astype(int) / 3).astype(int) ## get all indels
+plt_df_gt_to_d.loc[plt_df_gt_to_d['genotype_all_s'].str[4] == '_', 'mut_pos'] = ((plt_df_gt_to_d.loc[plt_df_gt_to_d['genotype_all_s'].str[4] == '_', 'genotype_all_s'].str.split('_').str[1].astype(int)-1) / 3).astype(int)+1 ## get all indels
 unique_snvs = np.unique([gt.strip('\n ') for gtl in plt_df_gt_to_d['genotype'].str.split(';') for gt in gtl])
 plt_df_gt_to_d['mutation'] = np.where(plt_df_gt_to_d['genotype_all_s'].isin(unique_snvs), 'SNV', 'Indel') ## map back if mutation is indel or SNV
-
 if mutation_of_interest == []:
     mutation_of_interest = [mut for mut in sorted(plt_df_gt_to_d['mutated_gene'].unique()) if 'basal' not in mut] ## remove 'basal' annotation as distinct mutation
 mut_gene_to_idx = {gt: idx for idx, gt in enumerate(mutation_of_interest[::-1]) if gt != ''} ## get dict to convert mutations to unique list entries for mutations of interest
@@ -381,7 +382,6 @@ for ab_idx, AB in enumerate(unique_abs):
         ax = plt.subplot(gs[ab_idx+1, day_idx])  # Each column gets its own plot in the second row
         sns.scatterplot(data = mean_mics, x = 'genotype_all', y = 'MIC', marker = '_', color = AB_color_dict[AB], linewidth = 3.5, s = 250, zorder = 10, ax = ax)
         sns.scatterplot(data = plt_df_tmp_date, x = 'genotype_all', y = 'MIC', color = AB_color_dict[AB], s=40, edgecolor = 'k', linewidth = 0.2, alpha = 0.8, zorder = 15, ax = ax)
-
         ax.axhline(y=np.log2(eucast_breakpoints[AB]), ls = '--', lw = 2, c = 'darkgrey')
         ax.set_xticks(np.arange(len(plt_df_tmp_date['genotype_all'].cat.categories)))
         ax.set_xticklabels(ax.get_xticklabels(), rotation = 90, ha = 'right', rotation_mode = 'anchor')
@@ -404,8 +404,8 @@ for ab_idx, AB in enumerate(unique_abs):
             ## add a connection from subplot to the antibiotic treatment plot
             xy_start = ax.transAxes.transform((0.5, 1))  ## center of current axis
             xy_end = ax1.transData.transform((day, -1))  # data coordinate of antibiotic treatment plot
-            xy_start = xy_start - np.array([65, 120])
-            xy_end = xy_end - np.array([65, 120])
+            xy_start = xy_start - np.array([148, 110])
+            xy_end = xy_end - np.array([148, 110])
             xy_start_figs.append(fig.transFigure.inverted().transform(xy_start))
             xy_end_figs.append(fig.transFigure.inverted().transform(xy_end))
 
@@ -512,8 +512,8 @@ ax1.legend(legend_info, legend_labels, loc = 'center left', bbox_to_anchor = (1,
 [plt.annotate('',xy=xy_end_fig, xycoords='figure fraction',
             xytext=xy_start_fig, textcoords='figure fraction',
             arrowprops=dict(arrowstyle="->", color='k', lw=1.5)) for xy_start_fig, xy_end_fig in zip(xy_start_figs, xy_end_figs)]
-fig.savefig(os.path.expanduser(f'~/Nextcloud/keylab/projects/mf_2020_hap/labbook/data_analysis/figures/2025_06_09_P07_Ehormaechei_MIC_{ab_plotted}_genotypes.pdf'),bbox_inches = 'tight', transparent=True)
-fig.savefig(os.path.expanduser(f'~/Nextcloud/keylab/projects/mf_2020_hap/labbook/data_analysis/figures/2025_06_09_P07_Ehormaechei_MIC_{ab_plotted}_genotypes.svg'),bbox_inches = 'tight', transparent=True)
+fig.savefig(os.path.expanduser(f'~/Nextcloud/keylab/projects/mf_2020_hap/labbook/data_analysis/figures/2026_03_26_P07_Ehormaechei_MIC_{ab_plotted}_genotypes.pdf'),bbox_inches = 'tight', transparent=True)
+fig.savefig(os.path.expanduser(f'~/Nextcloud/keylab/projects/mf_2020_hap/labbook/data_analysis/figures/2026_03_26_P07_Ehormaechei_MIC_{ab_plotted}_genotypes.svg'),bbox_inches = 'tight', transparent=True)
 
 
 ## print mic differences of interest
@@ -525,3 +525,15 @@ get_fold_change(plt_df, [4.75, 11.75], ['Ciprofloxacin'], 'gyrA')
 ## post 2nd infection
 get_fold_change(plt_df, [25.75, 39.75, 46.75], ['Ciprofloxacin'], 'romA\\|acrR', exclude_genotype = ['acrR_283']) ## intergenic
 get_fold_change(plt_df, [25.75, 39.75, 46.75], ['Ciprofloxacin'], 'acrR_283', exclude_genotype = ['romA|acrR']) ## genic AA 94
+
+
+## --> gyrA vs wt
+get_fold_change(plt_df, [-9.5, 4.75], ['Ciprofloxacin'], 'gyrA')
+##
+get_fold_change(plt_df, [4.75, 11.75], ['Cefotaxime', 'Piperacillin/\nTazobactam', 'Meropenem', 'Imipenem'], 'ampD')
+
+get_fold_change(plt_df, [4.75, 11.75], ['Cefotaxime', 'Piperacillin/\nTazobactam'], 'ampD')
+
+## first vs last 
+get_fold_change(plt_df, [-9.5, 46.75], ['Ciprofloxacin', 'Cefotaxime', 'Piperacillin/\nTazobactam', 'Meropenem', 'Imipenem'], 'acrR_283') ## genic AA 94
+

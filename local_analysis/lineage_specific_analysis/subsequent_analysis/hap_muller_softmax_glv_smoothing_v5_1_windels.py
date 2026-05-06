@@ -106,21 +106,40 @@ def find_mrca(tree, tips):
 def get_finetuned_polarization(anc_to_tip_dict, der_to_anc_dict, lineage_dict):
     ## check if a lineage is a subset of another lineage to finetune polarization (ancestry -> derived state)
     anc_to_tip_finetuned_dict = {}
+
     for anc, der in anc_to_tip_dict.items():
         if len(der) > 1:
+            re_parented = set()
+
             for mut1, mut2 in combinations(der, 2):
-                if (len(lineage_dict[mut1]) < len(lineage_dict[mut2])) & all([smpl in lineage_dict[mut2] for smpl in lineage_dict[mut1]]):  
-                    anc_to_tip_finetuned_dict[mut2] = [mut1] ## add mutation as new child of ancestor 
-                    anc_to_tip_finetuned_dict[anc] = [mut for mut in anc_to_tip_dict[anc] if mut != mut1] ## remove mutation from old ancestor
+                mut1_samples = lineage_dict[mut1]
+                mut2_samples = lineage_dict[mut2]
+                
+                if len(mut1_samples) < len(mut2_samples) and all(s in mut2_samples for s in mut1_samples):
+
+                    anc_to_tip_finetuned_dict.setdefault(mut2, []) ## setdefault allows to not overwrite mut2 when already present
+                    if mut1 not in anc_to_tip_finetuned_dict[mut2]:
+                        anc_to_tip_finetuned_dict[mut2].append(mut1)
+                    re_parented.add(mut1)
                     der_to_anc_dict[mut1] = mut2
-                elif (len(lineage_dict[mut2]) < len(lineage_dict[mut1])) & all([smpl in lineage_dict[mut1] for smpl in lineage_dict[mut2]]):  
-                    anc_to_tip_finetuned_dict[mut1] = [mut2] ## add mutation as new child of ancestor 
-                    anc_to_tip_finetuned_dict[anc] = [mut for mut in anc_to_tip_dict[anc] if mut != mut2] ## remove mutation from old ancestor
+                elif len(mut2_samples) < len(mut1_samples) and all(s in mut1_samples for s in mut2_samples):
+                    anc_to_tip_finetuned_dict.setdefault(mut1, []) ## setdefault allows to not overwrite mut1 when already present
+                    if mut2 not in anc_to_tip_finetuned_dict[mut1]:
+                        anc_to_tip_finetuned_dict[mut1].append(mut2)
+                    re_parented.add(mut2)
                     der_to_anc_dict[mut2] = mut1
-                else:
-                    anc_to_tip_finetuned_dict[anc] = der
+
+            existing = anc_to_tip_finetuned_dict.setdefault(anc, []) ## setdefault allows to not overwrite anc when already present
+            for m in der:
+                if m not in re_parented and m not in existing:
+                    existing.append(m)
+
         else:
-            anc_to_tip_finetuned_dict[anc] = der
+            existing = anc_to_tip_finetuned_dict.setdefault(anc, [])
+            if der[0] not in existing:
+                existing.append(der[0])
+            der_to_anc_dict[der[0]] = anc
+
     return der_to_anc_dict, anc_to_tip_finetuned_dict
 
 def get_closest_anc_per_genotype_of_interest(tree, lineage_dict, root_name = 'root', finetune_polarization = True):
@@ -232,6 +251,10 @@ res_folder = os.path.expanduser("~/Documents/Data/Drylab/mf_2020_hap/muller_plot
 analysis_path = os.path.expanduser('~/Nextcloud/keylab/projects/mf_2020_hap/labbook/data_analysis/2022/denovo_2024_08/analysis/backup')#P0007_P07_Ehormaechei-c1_240825/2025_03_10_P07_Ehormaechei-c1_240825')
 analysis_paths = glob.glob(f'{analysis_path}/P0*')
 
+additional_indels = {'P07_Ehormaechei-c1': {'ampD[93]':  [['P07_1047', 'P07_1540', 'P07_1049', 'P07_1545', 'P07_1553', 'P07_1046'], {'gene_num': '[213]', 'gene_num_global': '[1648]', 'chr': 4, 'pos': 215911+93*3, 'locustag': 'MDIMIJ_08165', 'chr_boundary': False, 'ref': '', 'anc': '.', 'alt': '', 'max_indel_GL_diff_to_ref': float('nan'), 'size_gp': '', 'type': 'G', 'product': '1,6-anhydro-N-acetylmuramyl-L-alanine amidase AmpD', 'gene': 'ampD', 'protein_id': '.', 'strand': 1, 'loc1': 215911, 'loc2': 216474, 'muts': 93}],
+                                            'ampD[130]': [['P07_1201'], {'gene_num': '[213]', 'gene_num_global': '[1648]', 'chr': 4, 'pos': 215911+130*3, 'locustag': 'MDIMIJ_08165', 'chr_boundary': False, 'ref': '', 'anc': '.', 'alt': '', 'max_indel_GL_diff_to_ref': float('nan'), 'size_gp': '', 'type': 'G', 'product': '1,6-anhydro-N-acetylmuramyl-L-alanine amidase AmpD', 'gene': 'ampD', 'protein_id': '.', 'strand': 1, 'loc1': 215911, 'loc2': 216474, 'muts': 130}],
+                                            'ampD[160]': [['P07_1149'], {'gene_num': '[213]', 'gene_num_global': '[1648]', 'chr': 4, 'pos': 215911+160*3, 'locustag': 'MDIMIJ_08165', 'chr_boundary': False, 'ref': '', 'anc': '.', 'alt': '', 'max_indel_GL_diff_to_ref': float('nan'), 'size_gp': '', 'type': 'G', 'product': '1,6-anhydro-N-acetylmuramyl-L-alanine amidase AmpD', 'gene': 'ampD', 'protein_id': '.', 'strand': 1, 'loc1': 215911, 'loc2': 216474, 'muts': 160}]}}
+
 for species_path in sorted(analysis_paths):
     species = species_path.split('/')[-1]
     species = '_'.join(species.split('_')[1:-1]) ## get core species string of path
@@ -278,7 +301,7 @@ for species_path in sorted(analysis_paths):
     snp_table['muts'] = snp_table['muts'].fillna('').apply(lambda x: [mut if mut == mut else '' for mut in x.split(', ')])
     snp_table = snp_table.explode(['type', 'nt_alt', 'muts'])
 
-    ## correct polarization of mutation in Ehormaechei; note need to also change the polarization for the other allele on the same locus!!! (required for snp table without repolarization on the ancestral sequence (polarized based on outgroup!))
+    ## correct polarization of mutation in Ehormaechei; note need to also change the polarization for the other allele on the same locus!!!
     if species == 'P07_Ehormaechei-c1':
         is_gyrA_wrong_pol = (snp_table['chr'] == 7) & (snp_table['pos'] == 108226)
         snp_table.loc[is_gyrA_wrong_pol, 'muts'] = snp_table.loc[is_gyrA_wrong_pol, 'muts'].str.replace('F83S', 'S83F').str.replace('F83Y', 'S83Y')
@@ -298,7 +321,7 @@ for species_path in sorted(analysis_paths):
                 indel_table[col] = indel_table[col].fillna('')
             indel_table[col] = indel_table[col].apply(lambda x: [allele for allele in x.split(' ')])
         indel_table = indel_table.explode(['alt_stop', 'indel_alt', 'indel_pos_start', 'indel_pos_end'])
-        indel_table['indel_pos_aa_start'] = (indel_table[['indel_pos_start', 'indel_pos_end']].astype(int).min(axis = 1) / 3).astype(int)
+        indel_table['indel_pos_aa_start'] = ((indel_table[['indel_pos_start', 'indel_pos_end']].astype(int).min(axis = 1)-1) / 3).astype(int)+1
         indel_table.loc[indel_table['indel_pos_aa_start'] == 0, 'indel_pos_aa_start'] = ''
         indel_table['muts'] = indel_table['indel_pos_aa_start'].astype(str) + indel_table['indel_alt']
         indel_table_metadata_cols += ['muts', 'indel_pos_aa_start']
@@ -423,7 +446,61 @@ for species_path in sorted(analysis_paths):
                         key_name = re.sub(r'^nt_|^indel_', '', col)
                         cand_mut_dict[key_name] = mutation_info_row[col]
                     snp_freq_shifts_anno_lod.append(cand_mut_dict)
-
+        ## add additional indels identified
+        if (species in additional_indels.keys()) and (muttype == 'Indel'):
+            for add_mut, add_info in additional_indels[species].items(): 
+                add_smpls, add_mut_metadata = add_info
+                freq_timepoint_dict = {tp: {loc: {} for loc in np.concatenate([['collapsed'], unique_locs])} for tp in unique_tps}
+                count_spl_timepoint = {tp: {loc: 0 for loc in np.concatenate([['collapsed'], unique_locs])} for tp in unique_tps}
+                
+                unique_mut = 1
+                for tp in unique_tps:
+                    smpls_at_tp = smpl_at_tp_dict[tp]
+                    smplsid_at_tp = [smpl.split('__')[-1] for smpl in smpls_at_tp]
+                    freq_timepoint_dict[tp]['collapsed'][add_mut] = np.sum([mut_smpl in smplsid_at_tp for mut_smpl in add_smpls]) / len(smplsid_at_tp)
+                    count_spl_timepoint[tp]['collapsed'] = len(smplsid_at_tp)
+                    for loc in locations_abbreviations:
+                        smplsid_at_tp_loc = [smpl.split('__')[-1] for smpl in smpls_at_tp if smpl in smpl_at_loc_dict[loc]]
+                        if len(smplsid_at_tp_loc) > 0:
+                            freq_timepoint_dict[tp][loc][add_mut] = np.sum([mut_smpl in smplsid_at_tp_loc for mut_smpl in add_smpls]) / len(smplsid_at_tp_loc)
+                        count_spl_timepoint[tp][loc] = len(smplsid_at_tp_loc)
+                
+                # calc max allele frequency chronological (min >> max from vi to vn; subjects with only one timepoint not considered)
+                valid_tps = [tp for tp in count_spl_timepoint.keys() if count_spl_timepoint[tp]['collapsed'] >= 2]
+                
+                if len(valid_tps) > 1: 
+                    max_af_change = 0
+                    allele_freqs = [loc_dict['collapsed'][add_mut] for tp, loc_dict in freq_timepoint_dict.items() if tp in valid_tps]
+                    af_change_allele = np.max(allele_freqs) - np.min(allele_freqs)
+                    max_af_change = np.max([af_change_allele, max_af_change])
+                    
+                    ## exclude singletons from dataset 
+                    num_smpls_with_support = len(add_smpls)
+                    if num_smpls_with_support == 1: ## accounts for homoplasies --> if 2 different alleles have each singletons, the site is kept! 
+                        if max_af_change >= allele_freq_change_min: ## just print message if samples would exceed allele_freq_change_min
+                            print(f"Excluding singleton in gene {mutation_info_row['locustag']} at chr {mutation_info_row['chr']} and pos {mutation_info_row['pos']} with max allele frequency change of {max_af_change} ")
+                        af_change_singletons_list[muttype].append(max_af_change)
+                        continue
+                    else:
+                        af_change_no_singletons_list[muttype].append(max_af_change)
+                    
+                    if max_af_change >= allele_freq_change_min:
+                        cand_mut_dict = {}
+                        # build dict for pd.dataframe
+                        cand_mut_dict['_chr'] = add_mut_metadata['chr']
+                        cand_mut_dict['_pos'] = add_mut_metadata['pos']
+                        cand_mut_dict['_tag'] = add_mut_metadata['locustag']
+                        
+                        for tp, loc_dict in freq_timepoint_dict.items():
+                            for loc, allele_dict in loc_dict.items():
+                                for allele, freq in allele_dict.items():
+                                    cand_mut_dict[f'_timepoint-{tp}_location-{loc}_{allele}_freqs'] = freq
+                                cand_mut_dict[f'_timepoint-{tp}_location-{loc}_counts'] = count_spl_timepoint[tp][loc]
+                        for col in metadata_cols: # get all data from annotation_mutations_dedup dataframe
+                            if col in add_mut_metadata.keys():
+                                key_name = re.sub(r'^nt_|^indel_', '', col)
+                                cand_mut_dict[key_name] = add_mut_metadata[col]
+                        snp_freq_shifts_anno_lod.append(cand_mut_dict)
     if len(snp_freq_shifts_anno_lod) == 0:
         print(f"\nNo loci exceeded min AF change of {allele_freq_change_min}. Skipping {species}")
         continue
@@ -561,6 +638,11 @@ for species_path in sorted(analysis_paths):
         for muttype, (mut_df, _) in mutations_to_evaluate.items():
             tmp_gt_to_isolate_dict = get_tips_w_mutation(mut_df, snp_table_isolate_cols, muller_tbl) ## get dict with isolates which have mutation
             gt_to_isolate_dict = {**gt_to_isolate_dict, **tmp_gt_to_isolate_dict}
+        if species in additional_indels.keys():
+            for indel, (smpls, _) in additional_indels[species].items():
+                if indel in muller_tbl['Mutation'].values:
+                    smpls_long = [smpl_fullid for smpl_fullid in snp_table_isolate_cols if smpl_fullid.split('__')[-1] in smpls]
+                    gt_to_isolate_dict = {**gt_to_isolate_dict, **{indel: smpls_long}}
 
         ## check if any mutation is linked and if so deduplicate
         muller_tbl, gt_to_isolate_dict_dedup = collapse_linked_mutations(muller_tbl, gt_to_isolate_dict, muller_table_columns_to_combine = muller_tbl.columns[1:7])
@@ -670,7 +752,6 @@ for species_path in sorted(analysis_paths):
 
         ## check if every identity in edges_df is present in population_df; else combine!
         unique_pop_identities = population_df['Identity'].unique()
-
 
         edges_df.to_csv(f'{species}_edges_{loc}_freq{allele_freq_change_min}_windels.tsv', index = False, sep = '\t')
         population_df.to_csv(f'{species}_pop_{loc}_freq{allele_freq_change_min}_windels.tsv', index = False, sep = '\t')

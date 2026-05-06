@@ -81,7 +81,6 @@ snp_table['num_S'] = snp_table['Locustag'].map(gene_spec_S_cnt_dict)
 snp_table['num_muts_genic'] = snp_table['num_S'] + snp_table['num_N']
 
 ## map probability of nonsyn muts and calculate dnds score
-
 snp_table_genic = snp_table[snp_table['num_muts_genic'] > 0]
 snp_table_genic['prob_N'] = snp_table_genic['locustag'].map(prob_N_per_gene_dict).astype(float)
 snp_table_genic['dN'] = snp_table_genic['num_N'] / (snp_table_genic['num_muts_genic']*snp_table_genic['prob_N'])
@@ -89,7 +88,6 @@ snp_table_genic['dS'] = snp_table_genic['num_S'] / (snp_table_genic['num_muts_ge
 snp_table_genic['dnds'] = snp_table_genic['dN'] / snp_table_genic['dS']
 ## remove those which have nonsyn only for the plot
 print(f'Identified {sum(np.isinf(snp_table_genic["dnds"]))} with nonsyn mutations only')
-snp_table_genic = snp_table_genic[~np.isinf(snp_table_genic['dnds'])]
 snp_table_genic = snp_table_genic.sort_values('dnds').reset_index(drop = True)
 snp_table_genic['empirical_pval_of_dnds'] = snp_table_genic.index / max(snp_table_genic.index)
 snp_table_genic['empirical_pval_of_dnds_perc'] = snp_table_genic['empirical_pval_of_dnds'] * 100 ## convert to percentages
@@ -99,38 +97,46 @@ snp_table_genic['dnds_plt'] = np.where(np.isinf(snp_table_genic['dnds']),
                                  snp_table_genic.loc[~np.isinf(snp_table_genic['dnds']), 'dnds'].max() + 1,
                                  snp_table_genic['dnds'])
 
-#change_ytick_dict = {3: '', 
-#                     3.5: 'Infinite'}
+## print number and percentile of those wthout any nonsyn & number of infinite (just an N but no S)!
+no_nynosyn = snp_table_genic['num_N'] == 0
+no_syn = snp_table_genic['num_S'] == 0
+print(f'Identified {sum(no_nynosyn)} number of genes without any nonsyn mutations (dnds = 0) indicative for the percentile of {max(snp_table_genic.loc[no_nynosyn, "empirical_pval_of_dnds_perc"])}')
+print(f'Identified {sum(no_syn)} number of genes without any syn mutations (dnds = inf) indicative for the percentile of {min(snp_table_genic.loc[no_syn, "empirical_pval_of_dnds_perc"])}')
+
 
 fimZ_locustag = 'MDIMIJ_05850' # fimZ
-fim_locustags = ['MDIMIJ_05855', # sfmF
+fim_locustags = ['MDIMIJ_05840', # STM0551
+                'MDIMIJ_05845', # fimY
+                'MDIMIJ_05855', # sfmF
                 'MDIMIJ_05860', # fimH
                 'MDIMIJ_05865', # fimD
                 'MDIMIJ_05870', # fimC
                 'MDIMIJ_05875', # fimI
                 'MDIMIJ_05880'] # fimA
 
+## genome-wide dnds:
+genome_wide_dnds = (11693/0.7105637207111837)/(49279/(1-0.7105637207111837)) ## recieved from dn_ds_results_P07_Ehormaechei-c1_240825.txt file
+
 fig, ax = plt.subplots(figsize = (8, 3))
 ax.axhline(y = 1, ls = '--', lw = 0.5, color = 'k', zorder = 5) ## annotate neutrality
-sns.scatterplot(data = snp_table_genic, x = 'empirical_pval_of_dnds_perc', y = 'dnds_plt', color = 'lightgrey', edgecolor = 'k', lw = 0.1, alpha = 0.4, zorder = 10, ax = ax)
-sns.scatterplot(data = snp_table_genic[snp_table_genic['locustag'].isin(fim_locustags)], x = 'empirical_pval_of_dnds_perc', y = 'dnds_plt', color = 'orange', edgecolor = 'k', lw = 0.1, zorder = 15, ax = ax)
-sns.scatterplot(data = snp_table_genic[snp_table_genic['locustag'] == fimZ_locustag], x = 'empirical_pval_of_dnds_perc', y = 'dnds_plt', color = 'red', edgecolor = 'k', lw = 0.1, zorder = 20, ax = ax)
+ax.axhline(y = genome_wide_dnds, ls = ':', lw = 0.5, color = 'k', zorder = 5) ## annotate neutrality
+ax.text(x = 99.75, y = genome_wide_dnds + 0.01, s = 'Genome-wide dN/dS', size = 8, ha = 'right', va = 'bottom', zorder = 20)
+sns.scatterplot(data = snp_table_genic, x = 'empirical_pval_of_dnds_perc', y = 'dnds', color = 'lightgrey', edgecolor = 'k', lw = 0.1, alpha = 0.4, zorder = 10, ax = ax)
+sns.scatterplot(data = snp_table_genic[snp_table_genic['locustag'].isin(fim_locustags)], x = 'empirical_pval_of_dnds_perc', y = 'dnds', color = 'orange', edgecolor = 'k', lw = 0.1, zorder = 15, ax = ax)
+sns.scatterplot(data = snp_table_genic[snp_table_genic['locustag'] == fimZ_locustag], x = 'empirical_pval_of_dnds_perc', y = 'dnds', color = 'red', edgecolor = 'k', lw = 0.1, zorder = 20, ax = ax)
 ax.set_xlim((0, 100))
-ax.set_ylim((None, None))
+ax.set_ylim((-0.05, None))
 ax.xaxis.set_major_locator(MultipleLocator(10))
 ax.yaxis.set_major_locator(MultipleLocator(0.5))
-#ax.set_yticks(np.concatenate([np.arange(0, 3, 0.5), np.array([3.5])]))
-#ax.set_yticklabels([l if l not in change_ytick_dict.keys() else change_ytick_dict[l] for l in ax.get_yticks()])
 legend_info = [Line2D([0], [0], marker = 'o', color = 'red', markerfacecolor = 'red', markeredgecolor = 'k', markeredgewidth = 0.1, linestyle="None", markersize = 8, label = 'fimZ')] 
 legend_info += [Line2D([0], [0], marker = 'o', color = 'orange', markerfacecolor = 'orange', markeredgecolor = 'k', markeredgewidth = 0.1, linestyle="None", markersize = 8, label = 'Gene in\nfim operon')] 
 legend_info += [Line2D([0], [0], marker = 'o', color = 'lightgrey', markerfacecolor = 'lightgrey', markeredgecolor = 'k', markeredgewidth = 0.1, linestyle="None", markersize = 8, label = 'other')]
-#legend_labels = ['fimZ', 'fim operon', 'other'] 
 ax.legend(title = 'Genes', handles = legend_info, loc='center left', bbox_to_anchor=(1, 0.5), fancybox=False)
 ax.set_ylabel('dNdS')
 ax.set_xlabel('Ordered dNdS score percentile [%]')
 ax.set_title(f'dNdS score of {len(snp_table_genic)} genes {len(smpl_cols)}\nEnterobacter hormaechei isolates')
 plt.tight_layout()
-fig.savefig(os.path.expanduser(f'~/Nextcloud/keylab/projects/mf_2020_hap/labbook/data_analysis/2023/public_data/2023_12_analysis/analysis/2025_08_25_P07_Ehormaechei-c1_240825_gubbinsdefault_ambig10/pdf/2025_06_18_empirical_pval_dNdS_sorted.pdf'))
+fig.savefig(os.path.expanduser(f'~/Nextcloud/keylab/projects/mf_2020_hap/labbook/data_analysis/2023/public_data/2023_12_analysis/analysis/2025_08_25_P07_Ehormaechei-c1_240825_gubbinsdefault_ambig10/pdf/2026_02_04_empirical_pval_dNdS_sorted.pdf'))
 
 ## print genes which are under positive selection: 
 print(f"Genes under positive selection are:\n{snp_table_genic[['Locustag', 'gene', 'product', 'num_muts_genic', 'num_N', 'num_S', 'dnds', 'across_smpl_support']].sort_values('dnds', ascending = False).to_string(index = False)}")
@@ -138,3 +144,6 @@ print(f"Genes under positive selection are:\n{snp_table_genic[['Locustag', 'gene
 print(f"FimZ is in the following dNdS percentiles:\n{snp_table_genic.loc[(snp_table_genic['locustag'] == fimZ_locustag), ['gene', 'num_muts_genic', 'num_N', 'num_S', 'dnds', 'empirical_pval_of_dnds_perc', 'across_smpl_support']].to_string(index = False)}")
 
 print(f"Fim operon genes are in the following dNdS percentiles:\n{snp_table_genic.loc[snp_table_genic['locustag'].isin(fim_locustags), ['gene', 'num_muts_genic', 'num_N', 'num_S', 'dnds', 'empirical_pval_of_dnds_perc', 'across_smpl_support']].to_string(index = False)}")
+
+## print genome wide dnds (values extracted from file)
+print(f'Genome wide dnds: {genome_wide_dnds}')

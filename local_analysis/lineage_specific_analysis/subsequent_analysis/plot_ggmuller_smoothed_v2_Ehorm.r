@@ -51,7 +51,7 @@ background_color <- c("background" = 'white')
 species_path <- "/Users/ad_lemur/Documents/Data/Drylab/mf_2020_hap/muller_plots/P07_Ehormaechei-c1"
 
 species <- gsub('.*/', '', species_path)
-pop_files <- list.files(path = species_path, pattern = ".*_pop_.*0.2_windels.tsv", full.names = TRUE)
+pop_files <- list.files(path = species_path, pattern = ".*_pop_.*0.3_windels.tsv", full.names = TRUE)
 if (length(pop_files) == 0) {next}
 plot_list <- list()
 for (pop_file in pop_files){
@@ -73,31 +73,32 @@ for (pop_file in pop_files){
   
   ## SNVs with Indels
   final_colors <- c(
-                  "basal" = "#F0F0F0",
-                  "rpiR[T138P]" = "#c8d5e1", 
-                  "ampD[68AG]; iscR[G60D]" = "#a1bad3",
-                  "gyrA[S83Y]" = "#7a9fc5",
-                  "gyrA[S83F]" = "#5384b6",
-                  "gyrA[S83F]; acrR[94TGGGGCCA]; LT12530[G275W]" = "#2c69a8",
-                  "gyrA[S83F]; acrR[94TGGGGCCA]; LT12530[G275W]; eptA[273TC]" = "#054f9a", 
-                  "fimZ[F126L]" = "#F9AE92",
-                  "fimZ[F126L]; citG[L68Q]" = "#F26B4E",
-                  "fimZ[F126L]; gyrA[D87G]" = "#DF3027"
+    "basal" = "#f0f0f0",
+    "rpiR[T138P]" = "#ced9e4", 
+    "ampD[68AG]; iscR[G60D]" = "#adc2d7",
+    "gyrA[S83Y]" = "#8babcb",
+    "gyrA[S83F]" = "#6a94bf",
+    "gyrA[S83F]; ampD[83AGG]" = '#487db3',
+    "gyrA[S83F]; acrR[94TGGGGCCA]; LT12530[G275W]" = "#2766a6",
+    "gyrA[S83F]; acrR[94TGGGGCCA]; LT12530[G275W]; eptA[273TC]" = "#054f9a", 
+    "fimZ[F126L]" = "#F9AE92",
+    "fimZ[F126L]; citG[L68Q]" = "#F26B4E",
+    "fimZ[F126L]; ampD[93]; gyrA[D87G]" = "#DF3027"
   )
   ## remove indel sequence (squishes plot and does not add anything)
   new_labels <- c(
-                  "basal" = "basal",
-                  "rpiR[T138P]" = "rpiR[T138P]",
-                  "ampD[68AG]; iscR[G60D]" = "ampD[68]; iscR[G60D]",
-                  "gyrA[S83Y]" = "gyrA[S83Y]",
-                  "gyrA[S83F]" = "gyrA[S83F]",
-                  "gyrA[S83F]; acrR[94TGGGGCCA]; LT12530[G275W]" = "gyrA[S83F]; acrR[94]; LT12530[G275W]",
-                  "gyrA[S83F]; acrR[94TGGGGCCA]; LT12530[G275W]; eptA[273TC]" = "gyrA[S83F]; acrR[94];\nLT12530[G275W]; eptA[273]",
-                  "fimZ[F126L]" = "fimZ[F126L]",
-                  "fimZ[F126L]; citG[L68Q]" = "fimZ[F126L]; citG[L68Q]",
-                  "fimZ[F126L]; gyrA[D87G]" = "fimZ[F126L]; gyrA[D87G]"
+    "basal" = "basal",
+    "rpiR[T138P]" = "rpiR[T138P]",
+    "ampD[68AG]; iscR[G60D]" = "ampD[68]; iscR[G60D]",
+    "gyrA[S83Y]" = "gyrA[S83Y]",
+    "gyrA[S83F]" = "gyrA[S83F]",
+    "gyrA[S83F]; ampD[83AGG]" = "gyrA[S83F]; ampD[83]",
+    "gyrA[S83F]; acrR[94TGGGGCCA]; LT12530[G275W]" = "gyrA[S83F]; acrR[94]; LT12530[G275W]",
+    "gyrA[S83F]; acrR[94TGGGGCCA]; LT12530[G275W]; eptA[273TC]" = "gyrA[S83F]; acrR[94];\nLT12530[G275W]; eptA[273]",
+    "fimZ[F126L]" = "fimZ[F126L]",
+    "fimZ[F126L]; citG[L68Q]" = "fimZ[F126L]; citG[L68Q]",
+    "fimZ[F126L]; ampD[93] gyrA[D87G]" = "fimZ[F126L]; ampD[93]; gyrA[D87G]"
   )
-  
   inf_days <- c(0)
   inf_color <- c("#ED4724")
   ## sort colors in their given way

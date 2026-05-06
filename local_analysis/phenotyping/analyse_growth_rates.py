@@ -20,6 +20,7 @@ plt.rcParams['svg.fonttype'] = 'none'
 
 # Assuming your dataframe has columns 'Time' and 'OD' (Optical Density) representing time and growth measurements
 # Replace 'your_dataframe.csv' with the actual file path or dataframe variable
+save_plts = False
 
 ##############################
 ## FUNCTIONS
@@ -281,7 +282,8 @@ for pval_method in ['star', 'text']:
     ax.set_ylabel('max(Delta[OD595]/h)')
     plt.xlabel(None)
     plt.tight_layout()
-    fig.savefig(os.path.expanduser(f'~/Nextcloud/keylab/projects/mf_2020_hap/labbook/2021_09_HAP_1st_batch_UKL/Data/phenotyping/growth_curves/proc/2025_01_08_P07_Ehorm_wt_fimZ_max_growthrate_per_genotype_pval{pval_method}.pdf'))
+    if save_plts:
+        fig.savefig(os.path.expanduser(f'~/Nextcloud/keylab/projects/mf_2020_hap/labbook/2021_09_HAP_1st_batch_UKL/Data/phenotyping/growth_curves/proc/2025_01_08_P07_Ehorm_wt_fimZ_max_growthrate_per_genotype_pval{pval_method}.pdf'))
 
 ## growth rate distribution
 ## plot growth rate vs time (non-smoothed but sliding window)
@@ -301,13 +303,32 @@ result_df_tmp['norm_time_max_growth'] = result_df_tmp['norm_time_max_growth']/36
 result_df_tmp['growth_rate_sliding'] = result_df_tmp['growth_rate_sliding']*3600 ## convert to hours
 result_df_tmp['genotype'] = result_df_tmp['sampleid'].map(translate_sampleids)
 
-fig, ax = plt.subplots(figsize = (6, 4))
-sns.lineplot(data = result_df_tmp, x = 'norm_time_max_growth', y = 'growth_rate_sliding', hue = 'sampleid_ext', palette = isolate_col_dict, estimator = 'mean', errorbar=('ci', 95), alpha = 0.6, linewidth = 2, ax = ax)
+## calculate the cumultative mean difference between the two genotypes in their delta to see if there is a delta accumulating over time
+cumutative_mean_delta_diff = result_df_tmp.groupby(['genotype', 'norm_time_max_growth'])['growth_rate_sliding'].mean().reset_index()
+cumutative_mean_delta_diff['cumutative_mean'] = cumutative_mean_delta_diff.groupby('genotype')['growth_rate_sliding'].cumsum()
+cumutative_mean_delta_diff['cumutative_mean'] = cumutative_mean_delta_diff['cumutative_mean']/3 ## correct for number of timepoints per hour as we report the value per hour!
+cumutative_mean_delta_pivot = cumutative_mean_delta_diff.pivot(index = 'norm_time_max_growth', columns = 'genotype', values = 'cumutative_mean').reset_index()
+cumutative_mean_delta_pivot['mean_delta'] = cumutative_mean_delta_pivot['wt'] - cumutative_mean_delta_pivot['FimZ[F126L]']
+
+
+## group per experimental date for each isolate the values together (biological replicates) to get a robust estimation of the differences
+# result_df_tmp_agg = result_df_tmp.groupby(['experiment_id', 'sampleid', 'sampleid_ext', 'norm_time_max_growth'], as_index=False, observed = True)['growth_rate_sliding'].agg('mean')
+## --> to stay consistent over the MS group not per biological replicate but report every bvalue by itself to show variability of the genotype
+result_df_tmp['norm_time_max_growth_norm0'] = result_df_tmp['norm_time_max_growth'] - min(result_df_tmp['norm_time_max_growth'])
+
+fig, ax = plt.subplots(figsize = (6, 3.25))
+sns.lineplot(data = result_df_tmp, x = 'norm_time_max_growth_norm0', y = 'norm_od', hue = 'sampleid_ext', palette = isolate_col_dict, estimator = 'mean', errorbar=('sd'), err_kws={'alpha': 0.2}, alpha = 0.8, linewidth = 2, ax = ax)
+ax.axhline(y = 0, lw = 0.8, ls = ':', color = 'grey')
+ax.set_xlim((0, 16))
 ax.xaxis.set_major_locator(ticker.MultipleLocator(4))
 ax.xaxis.set_minor_locator(ticker.MultipleLocator(1))
-ax.set_ylabel('Delta[OD595]/h')
+ax.yaxis.set_major_locator(ticker.MultipleLocator(0.2))
+ax.yaxis.set_minor_locator(ticker.MultipleLocator(0.1))
+ax.grid(which='major', axis = 'y', linestyle='-', linewidth=0.4, color='black', zorder = 1)
+ax.grid(which='minor', axis = 'y', linestyle=':', linewidth=0.4, color='black', zorder = 1)
+ax.set_ylabel('OD595')
 ax.set_xlabel('Time to maximum growth rate [h]')
 ax.legend(title = 'Isolate (Genotype)',loc = 'center left', bbox_to_anchor = (1, 0.5))
 plt.tight_layout()
-fig.savefig(os.path.expanduser('~/Nextcloud/keylab/projects/mf_2020_hap/labbook/2021_09_HAP_1st_batch_UKL/Data/phenotyping/growth_curves/proc/2025_01_08_P07_Ehorm_wt_fimZ_growthrate_sliding_curve.pdf'))
-
+if save_plts:
+    fig.savefig(os.path.expanduser('~/Nextcloud/keylab/projects/mf_2020_hap/labbook/2021_09_HAP_1st_batch_UKL/Data/phenotyping/growth_curves/proc/2025_11_08_P07_Ehorm_wt_fimZ_growthcurve.pdf'))
