@@ -243,9 +243,6 @@ growth_rate_df_all['sampleid_ext'] = pd.Categorical(growth_rate_df_all['sampleid
 growth_rate_df_all['genotype'] = pd.Categorical(growth_rate_df_all['genotype'], ['wt', 'FimZ[F126L]'], ordered=True)
 growth_curve_df_all['sampleid_ext'] = growth_curve_df_all['sampleid'] + ' (' + growth_curve_df_all['sampleid'].map(translate_sampleids) + ')'
 growth_curve_df_all['sampleid_ext'] = pd.Categorical(growth_curve_df_all['sampleid_ext'], [f'{key} ({val})' for key, val in translate_sampleids.items()], ordered=True)
-unique_sampleids = growth_curve_df_all.sort_values('sampleid_ext')['sampleid_ext'].unique()
-cmap = plt.get_cmap('tab20')
-color_dict = {sampleid: cmap(i % 20) for i, sampleid in enumerate(growth_curve_df_all['sampleid_ext'].unique())}
 
 
 ########################################
@@ -262,28 +259,24 @@ mannwhitneyu_test = StatTest(mannwhitneyu_func, mannwhitneyu_long_name, mannwhit
 genptype_pairs = list(itertools.combinations(growth_rate_df_all['genotype'].unique(), 2))
 
 ## plot the max growth rates 
-for pval_method in ['star', 'text']:
-    fig, ax = plt.subplots(figsize = (3.5, 4))
-    sns.boxplot(data = growth_rate_df_all, x = 'genotype', y = 'od_p_h', hue = 'genotype', palette = genotype_col_dict, dodge = False, fliersize = 0, legend = True, ax = ax, zorder = 5)
-    sns.stripplot(data = growth_rate_df_all, x = 'genotype', y = 'od_p_h', hue = 'genotype', palette = genotype_col_dict, dodge = False, alpha = 0.8, jitter = 0.25, s = 8, edgecolor = 'k', linewidth = 0.4, legend = False, ax = ax, zorder = 10)
-    annot = Annotator(ax, genptype_pairs, data=growth_rate_df_all, x='genotype', y='od_p_h')
-    if pval_method == 'star': 
-        annot.configure(test=mannwhitneyu_test, verbose=2, hide_non_significant=False, line_height=0.01, text_offset=-0.5, pvalue_thresholds=[[1e-4, '****'], [1e-3, '***'], [1e-02, '**'], [0.05, '*'], [1, 'ns']]).apply_test()
-    else:
-        annot.configure(test=mannwhitneyu_test, verbose=2, hide_non_significant=False, line_height=0.01, text_offset=-0.5, text_format='full', pvalue_format_string='{:.1e}').apply_test()
-    annot.annotate(line_offset_to_group=0.2, line_offset=-2)
-    ax.yaxis.set_major_locator(ticker.MultipleLocator(0.04))
-    ax.yaxis.set_minor_locator(ticker.MultipleLocator(0.02))
-    ax.grid(which='major', axis = 'y', linestyle='-', linewidth=0.4, color='black', zorder = 1)
-    ax.grid(which='minor', axis = 'y', linestyle=':', linewidth=0.4, color='black', zorder = 1)
-    ax.set_ylim((0, ax.get_ylim()[1]*1.08))
-    h, l = ax.get_legend_handles_labels() ## get legend handles and labels
-    ax.legend(title = 'Genotype',loc = 'center left', bbox_to_anchor = (1, 0.5))
-    ax.set_ylabel('max(Delta[OD595]/h)')
-    plt.xlabel(None)
-    plt.tight_layout()
-    if save_plts:
-        fig.savefig(os.path.expanduser(f'~/Nextcloud/keylab/projects/mf_2020_hap/labbook/2021_09_HAP_1st_batch_UKL/Data/phenotyping/growth_curves/proc/2025_01_08_P07_Ehorm_wt_fimZ_max_growthrate_per_genotype_pval{pval_method}.pdf'))
+fig, ax = plt.subplots(figsize = (3.5, 4))
+sns.boxplot(data = growth_rate_df_all, x = 'genotype', y = 'od_p_h', hue = 'genotype', palette = genotype_col_dict, dodge = False, fliersize = 0, legend = True, ax = ax, zorder = 5)
+sns.stripplot(data = growth_rate_df_all, x = 'genotype', y = 'od_p_h', hue = 'genotype', palette = genotype_col_dict, dodge = False, alpha = 0.8, jitter = 0.25, s = 8, edgecolor = 'k', linewidth = 0.4, legend = False, ax = ax, zorder = 10)
+annot = Annotator(ax, genptype_pairs, data=growth_rate_df_all, x='genotype', y='od_p_h')
+annot.configure(test=mannwhitneyu_test, verbose=2, hide_non_significant=False, line_height=0.01, text_offset=-0.5, text_format='full', pvalue_format_string='{:.1e}').apply_test()
+annot.annotate(line_offset_to_group=0.2, line_offset=-2)
+ax.yaxis.set_major_locator(ticker.MultipleLocator(0.04))
+ax.yaxis.set_minor_locator(ticker.MultipleLocator(0.02))
+ax.grid(which='major', axis = 'y', linestyle='-', linewidth=0.4, color='black', zorder = 1)
+ax.grid(which='minor', axis = 'y', linestyle=':', linewidth=0.4, color='black', zorder = 1)
+ax.set_ylim((0, ax.get_ylim()[1]*1.08))
+h, l = ax.get_legend_handles_labels() ## get legend handles and labels
+ax.legend(title = 'Genotype',loc = 'center left', bbox_to_anchor = (1, 0.5))
+ax.set_ylabel('max(Delta[OD595]/h)')
+plt.xlabel(None)
+plt.tight_layout()
+if save_plts:
+    fig.savefig(os.path.expanduser(f'~/Nextcloud/keylab/projects/mf_2020_hap/labbook/2021_09_HAP_1st_batch_UKL/Data/phenotyping/growth_curves/proc/2025_01_08_P07_Ehorm_wt_fimZ_max_growthrate_per_genotype_pvaltext.pdf'))
 
 ## growth rate distribution
 ## plot growth rate vs time (non-smoothed but sliding window)

@@ -49,6 +49,9 @@ sys.path.insert(0, SCRIPTS_DIRECTORY)
 import analysispy_module as apy
 
 
+max_threads = 32
+num_cpus_mut_qual = int(max([1, max_threads-1])) # number of cpus to use for mutational quality calculation
+
 # %% Filter Parameter -- IMPORTANT TO ADJUST !!!!
 # Much of this will need to vary according to your reference genome,
 # coverage, and particular samples
@@ -71,7 +74,7 @@ filter_parameter_site_per_sample = {\
 # Remove sites across samples that are not high quality or indications for recombination event
 filter_parameter_site_across_samples = {\
                                         'max_fraction_ambigious_samples_pregubbins' : 0.01, #across samples per position, be as restrict as you want to be in the end, the additional post gubbins filter is just there to remove sites which have high ambiguity and interfer with the tree construction!
-                                        'max_fraction_ambigious_samples' : 0.1, #across samples per position
+                                        'max_fraction_ambigious_samples' : 1, #across samples per position
                                         'min_median_coverage_position' : 3, #across samples per position
                                         'distance_for_nonsnp' : 500, #region in bp on either side of goodpos that is considered for recombination
                                         'corr_threshold_recombination' : 0.75 #minimum threshold for correlation to remove site 
@@ -87,10 +90,10 @@ gubbins_params = {\
                   'tree-builder': 'raxmlng',
                   'model': 'GTRGAMMA',
                   'kwargs': '--extensive-search',
-                  'threads': 64,
+                  'threads': max_threads,
                   'seed': 123
                 }
-gubbins_cond = 'gubbinsdefault_ambig10'
+gubbins_cond = 'gubbinsdefault_ambigALL'
 
 ## how far upstream of the nearest gene to annotate something a promoter
 ## mutation (not used if no annotation)
@@ -104,9 +107,9 @@ if reuse_latest_cutoff_vals == True:
 
 
 # %%  cd(workingdir)
-analysis_run = 'public_data_analysis'
+analysis_run = 'pathogendetection_2025_12'
 
-main_workingdir = os.path.expanduser('~/data/mf_2020_hap/data_analysis/2023/' + analysis_run + '/analysis/')
+main_workingdir = os.path.expanduser('~/data/mf_2020_hap/data_analysis/2025/' + analysis_run + '/analysis/')
 os.chdir(os.path.expanduser(main_workingdir))
 
 case_run='case'
@@ -129,7 +132,7 @@ NTs = np.array(['A','T','C','G'],dtype=object) # NTs='ATCG'
 
 # %% make dict of species as keys and patients in which those species have been found
 ## Read in samples csv fot that
-samples_csv = glob.glob(os.path.expanduser('~/data/mf_2020_hap/data_analysis/2023/' + analysis_run + '/mapping/samples.csv'))
+samples_csv = glob.glob(os.path.expanduser('~/data/mf_2020_hap/data_analysis/2025/' + analysis_run + '/mapping/samples.csv'))
 samples_csv = sorted(samples_csv)[-1] ## return newest samples_case.csv
 
 species_in_patients_dict = {}
@@ -184,8 +187,15 @@ for refgenome, subject_fld_name in species_in_patients_dict.items():
         # =============================================================================
         # Import candidate_mutation_table
         cmtdir = main_workingdir + cand_mut_table_dirs + '/' + refgenome + '/'
-        cmtFile = 'candidate_mutation_table_refgenomeoutgroups_dedup.pickle.gz'
-        [quals,p,counts,in_outgroup,sampleNames,indel_counter,coverage_stats] = apy.read_candidate_mutation_table_pickle_gzip(cmtdir + cmtFile)
+        cmtFile = 'candidate_mutation_table_respiratory_smpls_nonhumans_removed.pickle'
+        print(cmtdir + cmtFile)
+        if cmtFile.endswith('.gz'):
+            isgzip = True
+            print('Using zipped CMT file')
+        else:
+            isgzip = False
+            print('Using unzipped CMT file')
+        [quals,p,counts,in_outgroup,sampleNames,indel_counter,coverage_stats] = apy.read_candidate_mutation_table_pickle_gzip(cmtdir + cmtFile, isgzip = isgzip)
 
         # %%
         # =============================================================================
@@ -220,7 +230,7 @@ for refgenome, subject_fld_name in species_in_patients_dict.items():
         
         # %% 
         # get median cov per samples based on all positions in counts (aka p)
-        median_cov_p_per_sample = coverage_stats[:, 10] ## each row is sample, col [0-10) == covg bins 1x, 2x... >10x; [10]==median covg; [11]==mean; [12]==stddev 
+        median_cov_p_per_sample = coverage_stats[:, 11]## each row is sample, col [0-10] == covg bins 0x, 1x, 2x... >10x; [11]==median covg; [12]==mean; [13]==stddev 
 
         # % indel counter reduction to indel count
         # indel_counter: The first statistic is the number of reads (at this position and in this sample) that 
@@ -287,9 +297,8 @@ for refgenome, subject_fld_name in species_in_patients_dict.items():
         # =============================================================================
         # obtain isolate specific-count of covered based required to correct observed mutation count (ie. for molecular clock inference and paraevo-poisson)
         # NOTE: This data has to be generated by user as it dependes on the assembly build. Here I put a placeholder
-        numBaseGenome_covThreshold = coverage_stats[:, 8] ## bases covered > 8 per sample 
-        numBaseGenome_min_cov_snv_filter = coverage_stats[:, int(filter_parameter_site_per_sample['min_cov_per_strand_for_call']*2)-1] ## bases covered ≥ min cov per strand
-        ## open up memory
+        numBaseGenome_covThreshold = np.sum(coverage_stats[:, filter_parameter_site_across_samples['min_median_coverage_position_with_cov']:11], axis = 1) ## bases covered > 4 per sample to be consistent with filters (filtering sites ≥4, therefore normalize on the same!)
+        minNumBases = genomeLength * filter_parameter_sample_across_sites['min_basecalls_to_include_sample']
         del globals()['coverage_stats']
 
         # %%
@@ -304,7 +313,7 @@ for refgenome, subject_fld_name in species_in_patients_dict.items():
         refnti_m = np.tile(refnti,(num_samples,1)).transpose() # build 2D matrix with outgroup (ancestral) allele
         
         ## Estimate outgroup (ancestral allele) from ALL samples added as outgroup to SM pipeline (ancnti* == major allele)
-        pattern = re.compile('_GCA_|_GCF_') # string tag in sample Name to identify outgroup in staphAD data
+        pattern = re.compile('_GCA_|_GCF_') # string tag in sample Name to identify outgroup 
         outgroup_name = np.array(list(filter(pattern.search, list(sampleNames))))
         outgroup_bool = np.isin(sampleNames , outgroup_name)
         
@@ -364,7 +373,6 @@ for refgenome, subject_fld_name in species_in_patients_dict.items():
         calls[ (coverage_forward_strand < filter_parameter_site_per_sample['min_cov_per_strand_for_call']) ] = 4
         calls[ (coverage_reverse_strand < filter_parameter_site_per_sample['min_cov_per_strand_for_call']) ] = 4
         calls[ (indels > (0.5*coverage) ) ] = 4 
-        
         print(f'Rate of undefined bases (Ns) in samples: \tMinimum {min(snps_Ns):.2f}%, \tmaximum {max(snps_Ns):.2f}% and at \tmedian {median(snps_Ns):.2f}% of SNPs per sample')
         print(f'Filtering by FQ scores: \t\tRemoved minimum {min(snps_removed_by_quals):.2f}%, \tmaximum {max(snps_removed_by_quals):.2f}% and at \tmedian {median(snps_removed_by_quals):.2f}% of SNPs per sample')
         print(f'Filtering by major allele frequency: \tRemoved minimum {min(snps_removed_by_maf):.2f}%, \tmaximum {max(snps_removed_by_maf):.2f}% and at \tmedian {median(snps_removed_by_maf):.2f}% of SNPs per sample')
@@ -372,21 +380,67 @@ for refgenome, subject_fld_name in species_in_patients_dict.items():
         print(f'Filtering by reverse strand coverage: \tRemoved minimum {min(snps_removed_by_revstrand):.2f}%, \tmaximum {max(snps_removed_by_revstrand):.2f}% and at \tmedian {median(snps_removed_by_revstrand):.2f}% of SNPs per sample')
         print(f'Filtering by indel support: \t\tRemoved minimum {min(snps_removed_by_indel):.2f}%, \tmaximum {max(snps_removed_by_indel):.2f}% and at \tmedian {median(snps_removed_by_indel):.2f}% of SNPs per sample')
 
+        ## remove sites from the data which have throughout no support (= 4)
+        supported_pos = np.where( np.sum(calls < 4, axis=1) > 0 )[0]
+        removed_sites = len(p) - len(supported_pos)
+        print(f'{removed_sites} sites have no support within any sample after filtering sites per sample and will be removed from CMT')
+        if removed_sites > 0:
+            p = p[supported_pos]
+            counts = counts[:, :, supported_pos]
+            quals = quals[supported_pos, :]
+            coverage_forward_strand = coverage_forward_strand[supported_pos, :]
+            coverage_reverse_strand = coverage_reverse_strand[supported_pos, :]
+            coverage=coverage[supported_pos,:]
+            refnti_m = refnti_m[supported_pos, :]
+            contig_positions = contig_positions[supported_pos, :]
+            mutantAF = mutantAF[supported_pos, :]
+            maf = maf[supported_pos, :]
+            maNT = maNT[supported_pos, :]
+            minorNT = minorNT[supported_pos, :]
+            minorAF = minorAF[supported_pos, :]
+            calls = calls[supported_pos, :]
+            indels = indels[supported_pos, :]
+
         ## Filter per site across samples
         # Ignore here outgroup samples!
         siteFilt = np.any(( (calls[:,ingroup_bool]>3).sum(axis=1) >= ((num_samples-np.sum(outgroup_bool)) * filter_parameter_site_across_samples['max_fraction_ambigious_samples_pregubbins']) \
                             ,np.median( coverage[:,ingroup_bool], axis=1) < filter_parameter_site_across_samples['min_median_coverage_position'] ),axis=0)
         calls[ siteFilt ,:] = 4 # sites that fail qc -> 4, for all samples incl. outgroup     
         
+        ## remove sites from the data which have throughout no support (= 4)
+        supported_pos_across = np.where( np.sum(calls < 4, axis=1) > 0 )[0]
+        removed_sites = len(p) - len(supported_pos_across)
+        print(f'{removed_sites} sites have no support after filtering sites across samples and will be removed from CMT')
+        if removed_sites > 0:
+            p = p[supported_pos_across]
+            counts = counts[:, :, supported_pos_across]
+            quals = quals[supported_pos_across, :]
+            coverage_forward_strand = coverage_forward_strand[supported_pos_across, :]
+            coverage_reverse_strand = coverage_reverse_strand[supported_pos_across, :]
+            coverage=coverage[supported_pos_across,:]
+            refnti_m = refnti_m[supported_pos_across, :]
+            contig_positions = contig_positions[supported_pos_across, :]
+            mutantAF = mutantAF[supported_pos_across, :]
+            maf = maf[supported_pos_across, :]
+            maNT = maNT[supported_pos_across, :]
+            minorNT = minorNT[supported_pos_across, :]
+            minorAF = minorAF[supported_pos_across, :]
+            calls = calls[supported_pos_across, :]
+            indels = indels[supported_pos_across, :]
+
+        print(f'Identifying mutational qualities of {len(p)} sites using {num_cpus_mut_qual} threads')
+
         # NOTE: func below takes forever with many SNPs...saved below
-        [mutQual, mutQualIsolates] = apy.ana_mutation_quality(calls[:,ingroup_bool],quals[:,ingroup_bool]) # get FQ value for SNP across samples. mutQualIsolates contains sample indices for sample pair FQ based on. 
+        [mutQual, mutQualIsolates] = apy.ana_mutation_quality(calls[:,ingroup_bool],quals[:,ingroup_bool], ncpu=num_cpus_mut_qual) # get FQ value for SNP across samples. mutQualIsolates contains sample indices for sample pair FQ based on. 
         mutQual = np.nan_to_num(mutQual, nan=-1) # turn mutQual nan's to -1; necessary to avoid later warning
         
+        print('Identify samples and sites of candidate positions')
         ## translate filtered calls of ingroup into goodpos. mutations we believe. fixedmutation part removed in v6.
         hasmutation = (calls != refnti_m) & (calls < 4) & (np.tile(mutQual,(1,num_samples)) >= 1) # consider only ingroup samples; mutQual >= 1 is very loose. Important filter with low qual data! refnt not ancnt (as we want to find snps _between_ samples not between samples and outgroup!)
         hasmutation[:,outgroup_bool] = False # put outgroup samples 4 in order to identify ingroup mutations only
         
         candpos = np.where( np.sum(hasmutation, axis=1) > 0 )[0] # NOTE: candpos/goodpos is INDEX of good positions for p!
+        np.savetxt('candpos_genomepos.txt',p[candpos],fmt='%s')
 
         print(f'Identified {len(candpos)} candidate positions for SNPs')
         if len(candpos) == 0:
@@ -394,36 +448,27 @@ for refgenome, subject_fld_name in species_in_patients_dict.items():
                 print('No variable positions identified. End of analysis.')
             continue
 
-        cmtdir = main_workingdir + cand_mut_table_dirs + '/' + refgenome + '/'        
-        # cmtFile_sub_gp = 'candidate_mutation_table_processed_gp.gubbins10reps_pad.pickle'
-        cmtFile_sub_gp = f'candidate_mutation_table_processed_candpos.acrossallsmpls_{gubbins_cond}.pickle'
-        with open(cmtdir + cmtFile_sub_gp, 'wb') as pickle_file:
-            pickle.dump({
-                'counts': counts,
-                'quals': quals,
-                'coverage_forward_strand': coverage_forward_strand,
-                'coverage_reverse_strand': coverage_reverse_strand,
-                'refnti_m': refnti_m,
-                'p': p,
-                'refgenome': refgenome,  
-                'sampleNames': sampleNames,  
-                'outgroup_bool': outgroup_bool,  
-                'numBaseGenome_covThreshold': numBaseGenome_covThreshold,  
-                'contig_positions': contig_positions,
-                'mutantAF': mutantAF,
-                'maf': maf,
-                'maNT': maNT,
-                'minorNT': minorNT,
-                'minorAF': minorAF,
-                'calls': calls,
-                'hasmutation': hasmutation,
-                'candpos': candpos,
-                'ingroup_idx': ingroup_idx, 
-                'ref_genome_folder': ref_genome_folder,
-                'chrStarts': chrStarts,
-                'scafNames': scafNames, 
-                }, pickle_file)
-        subprocess.run(f'gzip --force {cmtdir}{cmtFile_sub_gp}', shell = True) ## Note: CLI gzip is faster than pythons gzip.open for larger files!
+        counts = counts[:, :, candpos]
+        quals = quals[candpos, :]
+        coverage_forward_strand = coverage_forward_strand[candpos, :]
+        coverage_reverse_strand = coverage_reverse_strand[candpos, :]
+        refnti_m = refnti_m[candpos, :]
+        p = p[candpos]
+        contig_positions = contig_positions[candpos, :]
+        mutantAF = mutantAF[candpos, :]
+        maf = maf[candpos, :]
+        maNT = maNT[candpos, :]
+        minorNT = minorNT[candpos, :]
+        minorAF = minorAF[candpos, :]
+        calls = calls[candpos, :]
+        hasmutation = hasmutation[candpos, :]
+        mutQual = mutQual[candpos]
+
+        ## open up memory 
+        del globals()['coverage']
+        del globals()['refnt']
+        del globals()['refnti']
+
         
         ########################################################
         ########################################################
@@ -432,7 +477,8 @@ for refgenome, subject_fld_name in species_in_patients_dict.items():
         lineage_dict = {refgenome: [sample for sample in sampleNames[ingroup_bool]]}
         if gubbins_params != {}:
             calls[:, ingroup_idx], hasmutation[:, ingroup_idx] = apy.identify_recombination_sites_via_gubbins(calls[:, ingroup_idx], p, sampleNames[ingroup_idx], hasmutation[:, ingroup_idx], ref_genome_folder, chrStarts, scafNames, genomeLength, gubbins_params, lineage_dict, filter_parameter_site_across_samples['max_fraction_ambigious_samples'], mask_recomb_per_sample=True)
-
+        else:
+            print('Due to Gubbins failing on the large dataset, recombination masking is skipped in this run.\n')
         goodpos = np.where( np.sum(hasmutation, axis=1) > 0 )[0] # NOTE: candpos/goodpos is INDEX of good positions for p!
         
         print(f'{np.shape(goodpos)[0]} good positions have been identified.\n')
@@ -462,7 +508,7 @@ for refgenome, subject_fld_name in species_in_patients_dict.items():
             print('in troubleshoot mode')
 
         ## need to be set to plot in new window!!!
-        if np.shape(goodpos)[0] > 0: 
+        if (np.shape(goodpos)[0] > 0) or (np.shape(sampleNames)[0] < 1000): ## limit to max 1000 samples as otherwise matlotlib failes due to size of plot
             ##%matplotlib qt
             apy.plot_interactive_scatter_barplots(p,mutQual,'pos','qual', sampleNames,counts,timestamp, filter_parameter_site_across_samples['corr_threshold_recombination'], subject_fld_label, refgenome, saveplots = True)
 
@@ -472,7 +518,8 @@ for refgenome, subject_fld_name in species_in_patients_dict.items():
             apy.plot_quals_rates(quals, hasmutation, sampleNames, subject_fld_label, refgenome, timestamp, '_goodpos')
             apy.plot_count_rates(counts, hasmutation, sampleNames, subject_fld_label, refgenome, timestamp, '_goodpos')
             apy.plot_Ns_rate(maNT, sampleNames, p, genomeLength, 10, subject_fld_label, refgenome, timestamp, '_goodpos')
-        
+        print(goodpos.size,'goodpos found.')
+
         # %% 
         # Define ancnti and outsplnti based on filtered calls
 
@@ -614,13 +661,13 @@ for refgenome, subject_fld_name in species_in_patients_dict.items():
             calls_for_tree_1outgrp = calls_for_tree[:, redundant_outgroups_bool]
             treesampleNamesLong_wRef_1outgrp = treesampleNamesLong_wRef[redundant_outgroups_bool]
             sampleNamesDnapars_wRef = sampleNamesDnapars_wRef[redundant_outgroups_bool]
-            
+            apy.write_calls_sampleName_to_fasta(calls_for_tree_1outgrp[:, 1:],treesampleNamesLong_wRef_1outgrp[1:],'snp_msa_all') ## all except ref which should not be used for ML tree's!
             ## write alignment file for ML tree:
             apy.write_calls_sampleName_to_fasta(calls_for_tree_1outgrp,treesampleNamesLong_wRef_1outgrp,'snp_msa')
                 
             # Uncomment to get ML tree
             raxml_model = 'GTR+G'
-            ml_tree_timestamp = apy.generate_tree(calls_for_tree_1outgrp,treesampleNamesLong_wRef_1outgrp,sampleNamesDnapars_wRef,filetag=refgenome,buildTree='ML',raxml_model=raxml_model,root_on_smpl = outgroup_for_root, additional_raxml_parameters='--threads 64 --seed 123')
+            ml_tree_timestamp = apy.generate_tree(calls_for_tree_1outgrp,treesampleNamesLong_wRef_1outgrp,sampleNamesDnapars_wRef,filetag=f'{refgenome}_allsites',buildTree='ML',raxml_model=raxml_model,root_on_smpl = outgroup_for_root, additional_raxml_parameters='--threads 64 --seed 123')
             
             ## infer sequence on each node (needed for molecular clock calculation!)
             ml_suffix = raxml_model.replace('+', '').replace('{', '').replace('}', '')

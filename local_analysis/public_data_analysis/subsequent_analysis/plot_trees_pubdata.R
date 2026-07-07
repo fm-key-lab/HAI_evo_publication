@@ -26,42 +26,41 @@ get_descendant_tips <- function(tree, node) {
   tree$tip.label[tip_ids]
 }
 
-## Translate study and source abbreviations 
-source_l = list('urine' = 'Urinary tract', ## Includes: urine, urinary, urethral
-                'rectum' = 'Gastrointestinal tract', ## Includes: rectum, rectal, stool, anal, feces
-                'hos_ass' = 'Hospital-associated', ## Includes: patient or hospital, clinical
-                'blood' = 'Bloodstream', ## Includes: blood
-                'wound' = 'Wound', ## Includes: wound
-                'lung' = 'Respiratory tract', ## Includes: sputum, respiratory, tracheal, bronchoalveolar, lavage, bronchial, aspirate, bal, trach asp
-                'other_body' = 'Other body sources', ## Includes: body, bodily, non-wound, tissue, abdomen, bone, foot, skin, endocervical, leg, ulcer, breast, abscess, abdominal, gall, bile, peritoneal, throat, groin
-                'env' = 'Environment', ## Includes: environmental, wastewater, sink, drain, shower, bathroom
-                'other' = 'Other/Unclassified' ## Includes: all remaining and missing data
-) 
-study_l = list('ford22' = 'Forde et al. (2022)',
-               'van20' = 'Van Duin et al. (2020)',
-               'chav16' = 'Chavda et al. (2016)',
-               'cdc' = 'CDC HAI-Seq',
-               'stoe21' = 'Stoesser et al. (2024)' ## note--> now published
-)
 
 ## Okabe ito extended by 9th color and with grey
-source_colors = list('Respiratory tract' = '#56B4E9',
-                     'Urinary tract' = '#F0E442',
-                     'Bloodstream' = '#AA4499',
-                     'Wound' = '#CC79A7',
-                     'Gastrointestinal tract' = '#E69F00',
-                     'Other body sources' = '#009E73',
-                     'Hospital-associated' = '#D55E00',
-                     'Environment' = '#0072B2',
-                     'Other/Unclassified' = '#DDDDDD'
+country_colors = list('USA'=	'#d55e00',
+                     'Canada'=	'#da711e',
+                     'Mexico'=	'#df843c',
+                     'Guadeloupe'=	'#e49659',
+                     'Brazil'=	'#e9a977',
+                     'Argentina'=	'#eebc95',
+                     'Colombia'=	'#f2cfb2',
+                     'France'=	'#009e73',
+                     'Spain'=	'#1ea983',
+                     'Lithuania'=	'#3cb594',
+                     'Croatia'=	'#59c0a4',
+                     'Slovakia'=	'#77cbb4',
+                     'Greece'=	'#95d7c5',
+                     'Poland'=	'#b2e2d5',
+                     'China'=	'#0072b2',
+                     'Japan'=	'#2486bd',
+                     'Pakistan'=	'#4799c8',
+                     'Russia'=	'#6badd2',
+                     'Philippines'=	'#8fc1dd',
+                     'Singapore'=	'#b2d5e8',
+                     'Australia'=	'#faf7c6',
+                     'South Africa'=	'#cc79a7',
+                     'Tanzania'=	'#f0d7e5' 
 ) 
 
-study_colors = list('CDC HAI-Seq' = '#00767B',
-                    'Chavda et al. (2016)' = '#60BCE9',
-                    'Forde et al. (2022)' = '#DEE6E7',
-                    'Stoesser et al. (2024)' = '#F9D576',
-                    'Van Duin et al. (2020)' = '#E94C1F'
-)
+## colors based on Clustal X amino acid colors and adjusted from there
+nt_colors = list('A' = '#9ecf7d',
+                 'T' = '#d8666c',
+                 'C' = '#7393cb',
+                 'G' = '#f0bf4f',
+                 'N' = 'grey')
+## colors extended via glasbey from the tol_muted palette
+study_colors = c('#332288','#88ccee','#44aa99','#117733','#999933','#ddcc77','#cc6677','#882255','#aa4499','#dddddd','#183d2d','#5d79d7','#108271','#7d2d00','#ba9696','#d26dba','#35457d','#145561','#9e654d','#494da6','#8a9eff','#5df7ff','#006541','#8a4586','#dfa2c6','#bec6a6','#044100','#8ab669','#20bedf','#dba224','#aa5d00','#41285d','#9a7586','#be8261','#492841','#106d6d','#9e6db6','#ffd74d','#92716d','#e3dfae','#9a4118','#7d7992','#4d5586','#3d399e','#0071ae','#554520','#ce96ca','#8e8639','#65ceb2','#187959')
 nonsyn_syn_color = list('Nonsynonymous' = '#454545',
                         'Synonymous' = '#cfcfcf')
 
@@ -70,7 +69,8 @@ nonsyn_syn_color = list('Nonsynonymous' = '#454545',
 # One need to let at first run refbased plottings through to get all the first observational dates of that species and then the denovo dates!
 outpath <- '/Users/ad_lemur/Nextcloud/keylab/projects/mf_2020_hap/labbook/data_analysis/figures/phylogenetic_trees'
 
-analysis_path <- "/Users/ad_lemur/Nextcloud/keylab/projects/mf_2020_hap/labbook/data_analysis/2023/public_data/2023_12_analysis/analysis/2025_08_25_P07_Ehormaechei-c1_240825_gubbinsdefault_ambig10"
+analysis_path <- "/Users/ad_lemur/Nextcloud/keylab/projects/mf_2020_hap/labbook/data_analysis/2023/public_data/pathogendetection_2025_12_respiratory/case_Pub_data_resp_P07_Ehormaechei-c1_240825/2026_05_28_P07_Ehormaechei-c1_240825_gubbinsdefault_ambigALL/"
+metadata_path <- "/Users/ad_lemur/Nextcloud/keylab/projects/mf_2020_hap/labbook/data_analysis/2023/public_data/pathogendetection_2025_12_respiratory/metadata/"
 species_observation_range <- c()
 
 patient_species <- gsub('.*/', '', analysis_path)
@@ -78,7 +78,7 @@ patient <- 'Public data'
 species <- 'Ehormaechei-c1_240825'
 
 ## Load tree
-tree_files <- list.files(path = paste0(analysis_path, '/raxml_bootstrapped_tree1000'), pattern = ".*1000bs_ML_s123_with_bootstraps.raxml.support", full.names = TRUE)
+tree_files <- list.files(path = paste0(analysis_path, '/raxml_bootstrapped_tree1000/'), pattern = ".*_ML_GTRG_snp_msa_all_1000bs_with_bootstraps.raxml.supportTBE$", full.names = TRUE)
 tree <- read.tree(tree_files[length(tree_files)])
 
 ## ensure tree is rooted
@@ -92,26 +92,23 @@ tips_to_remove <- append(tips_to_remove, outgroup_tip)
 # rerooted_tree_wo_ref <- rerooted_tree
 rerooted_tree_wo_ref <- drop.tip(rerooted_tree, tips_to_remove)
 
-## Extract metadata from tree
-split_tip_labels <- strsplit(rerooted_tree_wo_ref$tip.label, "_")
-study <- sapply(split_tip_labels, function(x) x[1])
-accession_id <- sapply(split_tip_labels, function(x) x[length(x)])
-source <- sapply(split_tip_labels, function(x) gsub('^eq_|^20_', '', paste(x[3:length(x)-1], collapse = '_')))
+## Load metadata
+tree_annotation_heatmap_df <- read.csv(paste0(metadata_path, 'metadata_samples.csv'))
+rename_dict <- c(
+  "Sample" = "tip_label" 
+)
+names(tree_annotation_heatmap_df) <- ifelse(
+  names(tree_annotation_heatmap_df) %in% names(rename_dict),
+  rename_dict[names(tree_annotation_heatmap_df)],
+  names(tree_annotation_heatmap_df)
+)
 
-tree_annotation_heatmap_df <- tibble(
-  tip_label = rerooted_tree_wo_ref$tip.label,
-  study = gsub('^van', 'van20', study),
-  source = source,
-  accession_id = accession_id
-) %>%
-  as.data.frame()
+## Load mappings of bioprojects to study names
+bioproject_to_study <- read.csv(paste0(metadata_path, 'HAI_pubdata_bioprojects.csv'), skip = 1)
+bioproject_to_study$study_name <- paste(bioproject_to_study$First_Author, bioproject_to_study$Year)
+bioproject_to_study$study_name <- ifelse(bioproject_to_study$study_name == ' NA', bioproject_to_study$BioProject, bioproject_to_study$study_name)
 
-## map the data to correct names
-map_source_vec <- unlist(source_l)
-tree_annotation_heatmap_df$source <- map_source_vec[tree_annotation_heatmap_df$source]
-tree_annotation_heatmap_df$source <- factor(tree_annotation_heatmap_df$source, levels = names(source_colors))
-map_study_vec <- unlist(study_l)
-tree_annotation_heatmap_df$study <- map_study_vec[tree_annotation_heatmap_df$study]
+tree_annotation_heatmap_df <- left_join(tree_annotation_heatmap_df, bioproject_to_study %>% select('BioProject', 'study_name'), by = 'BioProject', relationship = 'many-to-many')
 
 
 ## set everything for outgroup to NA
@@ -127,7 +124,7 @@ if (length(tips_to_highlight_branch) > 0){
 snp_table_file <- paste0(analysis_path, "/snp_table.csv")
 snp_table <- read.csv(snp_table_file, header=TRUE, row.names = NULL, sep = ',')
 
-annotation_mutation_file <- list.files(path = analysis_path, pattern = ".*annotation_mutations.csv", full.names = TRUE) 
+annotation_mutation_file <- list.files(path = analysis_path, pattern = ".*annotation_mutations_dedup_repolarized.csv", full.names = TRUE) 
 annotation_mutation <- read.csv(annotation_mutation_file[length(annotation_mutation_file)], header=TRUE, row.names = NULL, sep = ',')
 annotation_mutation <- annotation_mutation[, c('chr', 'pos', 'nt_pos', 'AA_gt_ref', 'AA_gt_anc', 'AA_gt_alt')]
 snp_table <- left_join(snp_table, annotation_mutation, by = c('chr', 'pos', 'nt_pos'))
@@ -143,25 +140,17 @@ rownames(snp_table_fimZ) <- NULL
 metadata_colnames <- c(colnames(snp_table_fimZ)[1:15], c('AA_gt_ref', 'AA_gt_anc', 'AA_gt_alt'))
 isolate_colnames <- colnames(snp_table_fimZ)[!(colnames(snp_table_fimZ) %in% metadata_colnames)]
 
-print(snp_table_fimZ[,c('AA_gt_ref', 'AA_gt_anc', 'AA_gt_alt')])
+mut_df <- snp_table_fimZ
+mut_df[isolate_colnames] <- lapply(mut_df[isolate_colnames], function(col){ifelse((col == mut_df$nt_anc), '', col)})
+mut_df[isolate_colnames] <- lapply(mut_df[isolate_colnames], function(col){ifelse((col == '?'), 'N', col)})
+rownames(mut_df) <- ifelse(mut_df$AA_gt_anc != mut_df$AA_gt_alt,
+                          paste0(mut_df$AA_gt_anc, mut_df$aa_pos, mut_df$AA_gt_alt),
+                          paste0(mut_df$AA_gt_anc, mut_df$aa_pos))
+mut_df <- mut_df %>% 
+  select(all_of(isolate_colnames)) %>%
+  t() 
 
-tips_to_mark_mut <- list()
-for (i in 1:nrow(snp_table_fimZ)){
-  obs_nts <- snp_table_fimZ[i, c('nt_anc', 'nt_ref', isolate_colnames)]
-  unique_nts <- unique(na.omit(unlist(obs_nts)))
-  ## get samples which contain mutation
-  smpl_with_mut <- names(obs_nts)[!(obs_nts == obs_nts$nt_anc | obs_nts == '?')] 
-  ## check if mutation is polarized in snp table 
-  if (obs_nts$nt_anc != obs_nts$nt_ref){
-    print('Mutation is not polarized well. Please fix!')
-    break
-  }
-  ## clean mutations ([, ] and ') as well as empty dots
-  mutation <- gsub("\\[|\\]|'", "", snp_table_fimZ[i, 'muts'])       # remove brackets and quotes
-  mutation <- gsub("\\b\\.\\b", "", mutation)                   # remove dots
-  mut_name <- ifelse(mutation == '', paste0(snp_table_fimZ[i, 'AA_gt_alt'], snp_table_fimZ[i, 'aa_pos']), mutation)
-  tips_to_mark_mut[as.character(mut_name)] <- list(sort(smpl_with_mut))
-}
+colnames(mut_df)[colnames(mut_df) == "P149PP"] <- "P149" ## replace multiallelic site of a syn mutation
 
 ####################
 ## plot initial tree 
@@ -178,12 +167,12 @@ tree_rotation = 90+open_angle ## degree how much the tree is rotated
 tree_scale_loc = round((360-tree_rotation)*number_tips/(360-open_angle), 0)
 
 ## plot tree
-tree_plt <- ggtree(rerooted_tree_wo_ref, size = 0.8, layout="fan", open.angle = open_angle) +
+tree_plt <- ggtree(rerooted_tree_wo_ref, linewidth = 0.8, layout="fan", open.angle = open_angle) +
   geom_tiplab(align = TRUE, linetype = "dotted", size = 0, linesize = 0.2) +
   geom_rootedge(max_tree_depth/50, size = 0.8) + 
-  geom_treescale(x = max_tree_depth*1.4, y = tree_scale_loc) + ## add tree scale
+  geom_treescale(x = max_tree_depth*1.65, y = tree_scale_loc) + ## add tree scale
   geom_point2(aes(subset = !isTip, fill = as.numeric(label)), shape = 21, color = 'black', size = 2) +
-  scale_fill_gradient(low = "white", high = "black", name = "Bootstrap value") + ## add bootstrap values
+  scale_fill_gradient(low = "white", high = "black", name = "Transfer bootstrap\nexpectation value") + ## add bootstrap values
   ggtitle(paste(patient, species))
 
   
@@ -193,103 +182,49 @@ tree_plt <- ggtree(rerooted_tree_wo_ref, size = 0.8, layout="fan", open.angle = 
 tree_plt_data <- tree_plt$data
 
 
-## get nodes to mark via a star
-if (length(tips_to_mark_mut) > 0){
-  ## check how many nodes need to be annotated multiple times and how often
-  node_with_multi_annotation <- list()
-  mut_to_node_list <- list()
-  for (mut in names(tips_to_mark_mut)){
-    ## subset list of isolates just to those which are present in tree (required to avoid errors); Note: If wrong tree loaded, then some mutations might not be annotated!!
-    isolates_on_node = tips_to_mark_mut[[mut]][tips_to_mark_mut[[mut]] %in% rerooted_tree_wo_ref$tip.label]
-    mark_mut_node <- MRCA(rerooted_tree_wo_ref, isolates_on_node)
-    mark_mut_node_str <- as.character(mark_mut_node)
-    
-    ## verify the number of tips on node (in case of homoplaies to resolve manually)
-    tips_on_node <- get_descendant_tips(rerooted_tree_wo_ref, mark_mut_node)
-    if (length(tips_on_node) > length(isolates_on_node)){
-      print(paste0('Identified for mutational position ', mut, ' ', length(tips_on_node), ' tips, but had ', length(isolates_on_node), ' mutated samples only'))
-    }
-    ## manual correction of homoplasy
-    if (mut %in% c('S38')){
-      isolates_aa38 <- list(c("cdc_eq_lung_24749090", "cdc_eq_other_25176724", "cdc_eq_urine_16893795", "cdc_eq_urine_16893810", "cdc_eq_urine_24066631", "cdc_eq_urine_26371314", "stoe21_hos_ass_18031499", "stoe21_hos_ass_18031642", "stoe21_hos_ass_18032051"),
-                          c("cdc_eq_urine_19034561", "cdc_eq_urine_19572613")
-      )
-      mut_to_node_list[[mut]] <- c()
-      for (isolates in isolates_aa38){
-        mark_mut_node <- MRCA(rerooted_tree_wo_ref, isolates)
-        mark_mut_node_str <- as.character(mark_mut_node)  
-        if (!(mark_mut_node %in% names(node_with_multi_annotation))){
-          node_with_multi_annotation[[mark_mut_node_str]] <- c(mut)
-        }else{
-          node_with_multi_annotation[[mark_mut_node_str]] <- c(node_with_multi_annotation[[mark_mut_node_str]], mut)
-        }
-        mut_to_node_list[[mut]] <- c(mut_to_node_list[[mut]], mark_mut_node)
-      }
-    }else{
-      ## get a list of nodes with multiple annotations
-      if (!(mark_mut_node %in% names(node_with_multi_annotation))){
-        node_with_multi_annotation[[mark_mut_node_str]] <- c(mut)
-      }else{
-        node_with_multi_annotation[[mark_mut_node_str]] <- c(node_with_multi_annotation[[mark_mut_node_str]], mut)
-      }
-      mut_to_node_list[[mut]] <- mark_mut_node  
-    }
-    
-    
-  }
-  for (mut in names(tips_to_mark_mut)){
-    for (mut_node in mut_to_node_list[[mut]]){
-      # Find midpoint of branch given the node
-      derived <- tree_plt_data[tree_plt_data$node == mut_node, ]
-      ancestral <- tree_plt_data[tree_plt_data$node == derived$parent, ]
-      ## get the correct x to annotate freely the mutation
-      num_muts_on_branch <- length(node_with_multi_annotation[[as.character(mut_node)]])
-      id_in_list <- which(mut == node_with_multi_annotation[[as.character(mut_node)]])
-      x_fraction <- (id_in_list/(1+num_muts_on_branch)) ## get the fraction where to place the star on the branch 
-      mid_x <- sum(c(ancestral$x, derived$x)) * x_fraction
-      ## mark mutations
-      mut_is_syn <- ifelse(grepl("[0-9]$", mut), 'Synonymous', 'Nonsynonymous') ## check if last character is digit --> syn
-      tree_plt <- tree_plt +
-        geom_star(x = mid_x, y = min(derived$y), fill = nonsyn_syn_color[[mut_is_syn]], size = 7.5, alpha = 0.8) +
-        annotate('text', x = mid_x, y = min(derived$y)+2, label = mut, size = 3)
-    }
-  }
-  tree_plt <- tree_plt + 
-    scale_color_identity(guide = "legend", labels = names(nonsyn_syn_color), breaks = unname(unlist(nonsyn_syn_color)),name = "Mutation type") +
-    theme(legend.position = "right")
-}
 
 ## generate heatmap dataframes 
-source_df <- data.frame('Source' = tree_annotation_heatmap_df$source) %>%
+country_df <- data.frame('Country' = tree_annotation_heatmap_df$country) %>%
   `rownames<-`(tree_annotation_heatmap_df$tip_label)
 
-study_df <- data.frame('Study' = tree_annotation_heatmap_df$study) %>%
+study_df <- data.frame('Study' = tree_annotation_heatmap_df$study_name) %>%
   `rownames<-`(tree_annotation_heatmap_df$tip_label)
 
 
 tree_plt <- rotate_tree(tree_plt, angle = tree_rotation)
-## add source heatmap 
-tree_plt <- tree_plt + new_scale_fill()
-tree_plt <- gheatmap(tree_plt, study_df, 
-                     offset = plot_offset, width = width,
-                     color = 'black',
-                     colnames_angle=0, colnames_position = "top", 
-                     colnames_offset_y = colnames_offset, hjust = 1) +
-  scale_fill_manual(values = scales::alpha(study_colors, 0.6), name="Study", drop = FALSE)
   
-## add new scale and days since observation heatmap 
+## add country heatmap 
 tree_plt <- tree_plt + new_scale_fill()
-tree_plt <- gheatmap(tree_plt, source_df, 
-                     offset=plot_offset+width_offset, width=width,
+tree_plt <- gheatmap(tree_plt, country_df, 
+                     offset=plot_offset, width=width,
                      color = 'black', 
                      colnames_angle=0, colnames_position = "top", 
                      colnames_offset_y = colnames_offset, hjust = 1) +
-  scale_fill_manual(values = scales::alpha(source_colors, 0.8), name="Source", drop = FALSE) 
+  scale_fill_manual(values = scales::alpha(country_colors, 0.9), breaks = names(country_colors), name="Country", drop = FALSE) 
+
+## add study heatmap 
+tree_plt <- tree_plt + new_scale_fill()
+tree_plt <- gheatmap(tree_plt, study_df, 
+                     offset = plot_offset+width_offset, width = width,
+                     color = 'black',
+                     colnames_angle=0, colnames_position = "top", 
+                     colnames_offset_y = colnames_offset, hjust = 1) +
+  scale_fill_manual(values = scales::alpha(study_colors, 0.75), name="BioProject ID", drop = FALSE)
+
+## add mutation heatmap 
+tree_plt <- tree_plt + new_scale_fill() +
+  xlim(0, max_tree_depth + plot_offset+width_offset + width_offset/3*length(colnames(mut_df)) + width_offset*2.3)
+tree_plt <- gheatmap(tree_plt, mut_df, 
+                     offset = plot_offset+width_offset*2.3, width = width/3*length(colnames(mut_df)),
+                     color = 'black',
+                     colnames_angle=0, colnames_position = "top", 
+                     colnames_offset_y = colnames_offset, hjust = 1) +
+  scale_fill_manual(values = nt_colors, breaks = names(nt_colors), name="fimZ SNVs", drop = FALSE, na.value = 'white')
 
 print(tree_plt)
 
 ## save plot
-pdf(paste0(outpath, "/", gsub(' ', '_', patient), '-', species, '.pdf'), 
-    width = 15, height = 15, paper = "special", onefile = F)
+pdf(paste0(outpath, "/", gsub(' ', '_', patient), '-', species, '_pathogendetection_resp.pdf'), 
+    width = 18, height = 15, paper = "special", onefile = F)
 print(tree_plt)
 dev.off()

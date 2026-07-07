@@ -67,7 +67,7 @@ last_day_post_inf = (last_day - inf_date).astype('timedelta64[D]').astype(int)+1
 ################################################
 ## load mic data
 ################################################
-ehorm_mic = pd.read_csv('~/Nextcloud/keylab/projects/mf_2020_hap/labbook/2021_09_HAP_1st_batch_UKL/Data/phenotyping/MIC_Assays/Raw/2024_07_04_MIC_Results_long_w_image_info_sorted.csv')
+ehorm_mic = pd.read_csv('~/Nextcloud/keylab/projects/mf_2020_hap/labbook/2021_09_HAP_1st_batch_UKL/Data/phenotyping/MIC_Assays/Raw/2024_07_04_ehorm_mic_long_w_image_info_sorted.csv')
 ehorm_mic = ehorm_mic[(ehorm_mic['ID'] != 'P07_2244') & (ehorm_mic['Species'] == 'E. hormaechei')] ## non existent lineage ID!!! Should be 2240 but cannot be certainly be recovered!
 
 ################################################

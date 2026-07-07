@@ -94,7 +94,7 @@ for (analysis_type in analysis_types){
     if (length(tree_files) == 0) {
       next
     }else{tree <- read.tree(tree_files[length(tree_files)])}
-
+      
     ## Load data to rescale tree based on number of core SNVs
     num_pos_coregenome_file <- paste0(most_recent_analysis_path, "/num_pos_coregenome.csv")
     # Rescaling of ML tree incorrect due to various substitutions/branch!!
@@ -109,11 +109,11 @@ for (analysis_type in analysis_types){
     
     mge_most_recent_path <- strsplit(most_recent_analysis_path, "/")[[1]]
     dirname <- mge_most_recent_path[length(mge_most_recent_path)]
-    mge_most_recent_path[length(mge_most_recent_path)] <- paste0('2025_08_09_', substr(dirname, 12, nchar(dirname)))
+    mge_most_recent_path[length(mge_most_recent_path)] <- paste0('2026_03_26_', substr(dirname, 12, nchar(dirname)))
     mge_most_recent_path <- paste(mge_most_recent_path, collapse = "/")
     #mge_table_file <- paste0(mge_most_recent_path, "/mge_analysis/mobile_genetic_elements_summary.csv")
     mge_table_file <- paste0(mge_most_recent_path, "/mge_analysis_ml_tree_based/mobile_genetic_elements_cov_breadth.csv")
-    
+
     ## ensure tree is rooted
     outgroup_tip <- grep("^OG", tree$tip.label, value = TRUE)
     rerooted_tree <- root(tree, outgroup = outgroup_tip, resolve.root = TRUE)
@@ -141,7 +141,7 @@ for (analysis_type in analysis_types){
       days_since_obs = as.numeric(date - min_species_date)
       STs <- sapply(tip_metadata, function(str_list) {
         str_contains_ST <- grepl('ST', str_list)
-        if (any(str_contains_ST)) {
+        if (any(str_contains_ST)) { 
           st = str_list[str_contains_ST]
           st = ifelse(grepl("^STNF", st), "NA", st)
           return(sub('\\?$', 'x', sub('^ST', '', st))) ## remove low confidence and ST strings
@@ -192,7 +192,7 @@ for (analysis_type in analysis_types){
           select(all_of(c('indel_pos_start', 'indel_pos_end'))) %>%
           mutate(across(everything(), as.integer)) %>%
           mutate(across(everything(), ~ ifelse(is.na(.), -1, .))) %>%
-          pmap_int(~ floor(min(c(...), na.rm = TRUE) / 3))
+          pmap_int(~ floor((min(c(...), na.rm = TRUE)-1) / 3)+1)
         indel_table$indel_pos_aa_start[indel_table$indel_pos_aa_start == -1] <- ""
         ## check if all columns of interest are present
         for (col in c('gene', 'locustag', 'gene1', 'locustag1', 'gene2', 'locustag2')){
@@ -315,7 +315,7 @@ for (analysis_type in analysis_types){
     
     ## replace tree tip labels with sampelid only 
     rerooted_tree_wo_ref$tip.label <- tree_annotation_heatmap_df$sampleid[match(rerooted_tree_wo_ref$tip.label, tree_annotation_heatmap_df$tip_label)] 
-
+    
     ## get nodes to highlight 
     tips_to_highlight_branch <- c()
     if (length(tips_to_highlight_branch) > 0){
@@ -335,8 +335,11 @@ for (analysis_type in analysis_types){
         isolates_with_mut <- gt_to_isolates[gt_to_isolates$V1 == mut, 'V2']
         tips_to_mark_mut[[mut]] <- strsplit(isolates_with_mut, ";")[[1]]
       }
-      
-    }else{tips_to_mark_mut <- c()}
+      ## Isolates used for phenotyping and MIC measurements
+      tips_to_highlight <- c('P07_2048', 'P07_2055', 'P07_2052', 'P07_2237', 'L00071_01_1', 'L00071_02_1', 
+                             "L00071_01_1", "L00071_02_1", "P07_0035", "P07_0046", "P07_0050", "P07_0085", "P07_0089", "P07_0095", "P07_1049", "P07_1088", "P07_1142", "P07_1149", "P07_1165", "P07_1200", "P07_1550", "P07_1553", "P07_1555", "P07_2048", "P07_2049", "P07_2050", "P07_2057", "P07_2221", "P07_2237", "P07_2240", "P07_2244", "P07_2255", "P07_2265")
+    }else{tips_to_mark_mut <- c()
+    tips_to_highlight <- c()}
     
     ## generate for heatmaps a color scale
     location_colors <- c("Nasal" = "#72e0ba",
@@ -386,7 +389,8 @@ for (analysis_type in analysis_types){
     }
     
     tree_plt <- ggtree(rerooted_tree_wo_ref, size = 0.8) +
-      geom_tiplab(align = TRUE, linetype = "dotted", size = 0, linesize = 0.2) +
+      geom_tiplab(aes(color = label %in% tips_to_highlight), align = TRUE, linetype = "dotted", size = tiplabels_size, linesize = 0.2) + ## highlight tips for subsequent manual annotation via dotted heatmap
+      scale_color_manual(values = c("FALSE" = "black", "TRUE" = "red"), guide = "none") + 
       geom_rootedge(max_tree_depth/50, size = 0.8) + 
       geom_treescale(x = treescale_x, y = -4, width = treescale_width) + ## add tree scale
       xlim(-max_tree_depth/25, max_tree_depth*1.5) + ## expand on right of plot

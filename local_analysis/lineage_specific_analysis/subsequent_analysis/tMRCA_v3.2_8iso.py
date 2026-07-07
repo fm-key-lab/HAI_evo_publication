@@ -8,6 +8,7 @@ from scipy.optimize import minimize
 import pandas as pd
 import sys
 import matplotlib.pyplot as plt
+import matplotlib.patches as mpatches
 from matplotlib.lines import Line2D
 from matplotlib.ticker import ScalarFormatter
 
@@ -422,13 +423,8 @@ tmrca_spec_inf = add_metadata_to_df(tmrca_spec_inf, inf_day_dict)
 ####################
 ## plot with all clades which have enough data 
 legend_info_tmrca = [Line2D([0], [0], marker = 'x', color = inf_color, linewidth = 0, markeredgewidth = 2, label = 'HAI\nonset', markersize = 8)]
-legend_info_tmrca += [plt.Rectangle((0,0),1,1, facecolor = tmrca_col, edgecolor = 'w', linewidth = 0, label = 'tMRCA of pathogenic\nlineage in microbiome\n(mean & 95% CI)')]
-legend_info_tmrca += [Line2D([0], [0], marker = 'o', color = mol_clock_col['Alternative'], markerfacecolor = mol_clock_col['Alternative'], markeredgecolor = 'k', markeredgewidth=0.2, linewidth = 2, label = 'tMRCA using an\nalternative molecular clock\n(mean & 95% CI)', markersize = 8)]
-
-
-legend_info_mol_clock = [Line2D([0], [0], linewidth = 0, label = 'Molecular clock\n(mean & 95% CI)')]
-for label, col in mol_clock_col.items():
-    legend_info_mol_clock += [Line2D([0], [0], marker = 'o', color = col, markerfacecolor = col, linewidth = 2, markeredgecolor = 'k', markeredgewidth=0.2, label = label, markersize = 8)]
+legend_info_tmrca += [plt.Rectangle((0,0),1,1, facecolor = tmrca_col, edgecolor = 'w', linewidth = 0, label = 'TMRCA of pathogenic\nlineage in microbiome\n(mean & 95% CI)')]
+legend_info_tmrca += [Line2D([0], [0], marker = '_', color = mol_clock_col['Applied'], markerfacecolor = mol_clock_col['Applied'], linewidth = 2, markeredgecolor = 'k', markeredgewidth=0.2, label = 'Molecular clock\n(mean & 95% CI)', markersize = 8)]
 
 ## plot with clades which contributed to inf and had enough data only
 tmrca_spec_inf_clades = tmrca_spec_inf[~tmrca_spec_inf['inf_date'].isna()].copy()
@@ -452,7 +448,161 @@ tmrca_spec_inf_clades_nohypmut_unsel = tmrca_spec_inf_clades_nohypmut[~selected_
 tmrca_spec_inf_clades_nohypmut_unsel['study_year'] = tmrca_spec_inf_clades_nohypmut_unsel['Strain'].str.split(' ').str[-1].str.split('_').str[0]
 tmrca_spec_inf_clades_nohypmut_unsel = tmrca_spec_inf_clades_nohypmut_unsel.sort_values('study_year').reset_index(drop = True)
 
-## NOTE: The plot would need some flattening again! It could be done much more efficient and readable!
+## Plot tMRCA as in main figure
+fig, axs = plt.subplots(figsize = (6, 5), nrows = 2, sharex = True, gridspec_kw={'height_ratios': [3, 1]})
+ax = axs.flatten()
+ax[0].axhline(0, ls = '--', lw = 1, c = 'k', alpha = 0.5)
+ax[0].annotate(text = 'Hospital admission', xy = (1.4, 0.25), fontsize=fontsize, ha = 'right')
+ax[0].scatter(x= tmrca_spec_inf_clades_nohypmut_sel['species'], 
+              y = tmrca_spec_inf_clades_nohypmut_sel['inf_date'], 
+              linestyle='None', 
+              s = 100, 
+              marker='x', 
+              color = inf_color, 
+              zorder = 5)
+ax[0].bar(x = tmrca_spec_inf_clades_nohypmut_sel['species'], 
+            height = extract_listentry_pd_col(tmrca_spec_inf_clades_nohypmut_sel['tmrca_meanmut_ci95'], 1) - extract_listentry_pd_col(tmrca_spec_inf_clades_nohypmut_sel['tmrca_meanmut_ci95'], ci_lower_idx),
+            bottom = tmrca_spec_inf_clades_nohypmut_sel['days_in_hosp'] - extract_listentry_pd_col(tmrca_spec_inf_clades_nohypmut_sel['tmrca_meanmut_ci95'], 1),
+            color = tmrca_col, 
+            width = 0.65, 
+            zorder = 3)
+ax[0].scatter(x= tmrca_spec_inf_clades_nohypmut_sel['species'], 
+              y = tmrca_spec_inf_clades_nohypmut_sel['days_in_hosp'] - tmrca_spec_inf_clades_nohypmut_sel['tmrca_meanmut'], 
+              color = '#555555', 
+              linestyle='None', 
+              s = 3050, 
+              lw = 1, 
+              marker='_', 
+              zorder = 7)
+ax[0].set_ylim((np.nanmin(tmrca_spec_inf_clades_nohypmut['days_in_hosp'] - extract_listentry_pd_col(tmrca_spec_inf_clades_nohypmut['tmrca_meanmut_ci95'], 1)) - 300,
+            np.nanmax(tmrca_spec_inf_clades_nohypmut['days_in_hosp'] - extract_listentry_pd_col(tmrca_spec_inf_clades_nohypmut['tmrca_meanmut_ci95'], ci_lower_idx)) + 150,
+            ))
+ax[0].set_ylabel('Time since hospital admission\n(in days)')
+ax[0].set_yscale('symlog')
+ax[0].get_yaxis().set_major_formatter(ScalarFormatter())
+ax[0].legend(handles = legend_info_tmrca, loc='center left', bbox_to_anchor=(1, 0.5), fancybox=False, shadow=False, fontsize = fontsize)
+ax[0].set_ylabel(ax[0].get_ylabel(), fontsize=fontsize+1)
+ax[0].set_title('Acquisition time', loc='right', ha = 'right', fontsize=fontsize-2)
+
+ax[1].scatter(x= tmrca_spec_inf_clades_nohypmut_sel['species'], 
+              y = tmrca_spec_inf_clades_nohypmut_sel['mut_rate'], 
+              linestyle='None', 
+              s = 200, 
+              marker='_',
+              edgecolor = mol_clock_col['Applied'],
+              lw = 2, 
+              color = mol_clock_col['Applied'], 
+              zorder = 15)
+ax[1].vlines(x = tmrca_spec_inf_clades_nohypmut_sel['species'], 
+           ymin = extract_listentry_pd_col(tmrca_spec_inf_clades_nohypmut_sel['mut_rate_ci95'], 0),
+           ymax = extract_listentry_pd_col(tmrca_spec_inf_clades_nohypmut_sel['mut_rate_ci95'], 1),
+           color = mol_clock_col['Applied'], 
+           lw = 2, 
+           zorder = 15)
+ax[1].set_yticks(np.arange( np.ceil(max( 
+                                    np.nanmax(extract_listentry_pd_col(tmrca_spec_inf_clades_nohypmut['mut_rate_ci95'], 1)), 
+                                    np.nanmax(tmrca_spec_inf_clades_nohypmut['mut_rate'])) 
+                                    + 1))) 
+ax[1].set_ylabel('Mutations/\nMb/year')
+ax[1].set_ylabel(ax[1].get_ylabel(), fontsize=fontsize+1)
+ax[1].set_title('Substitution rates', loc='right', ha = 'right', fontsize=fontsize-2)
+ax[1].set_ylim(0, None)
+[ax[idx].spines['top'].set_visible(False) for idx, a in enumerate(ax)]
+[ax[idx].spines['right'].set_visible(False) for idx, a in enumerate(ax)]
+plt.tick_params(labelsize=fontsize)
+plt.tight_layout()
+plt.savefig(os.path.expanduser(f'~/Nextcloud/keylab/projects/mf_2020_hap/labbook/data_analysis/figures/2026_05_15_tmrca_nonhypermut_patho_clades_min8isolates_lit_clocks_Saureus_wclocks_10kMCsim_main.svg'))
+
+
+
+
+## plot the molecular clocks and their respective tMRCAs for S aureus separately all again in order of the published years (supplementary figure)
+tmrca_saureus = tmrca_spec_inf_clades_nohypmut[tmrca_spec_inf_clades_nohypmut['species'] == 'S. aureus'].copy()
+tmrca_saureus['pub_year'] = tmrca_saureus['Strain'].str.split(' ').str[-1].str.split('_').str[0]
+tmrca_saureus['study'] = tmrca_saureus['Strain'].str.split('_').str[1:-1].str.join(' ')
+tmrca_saureus['strain'] = tmrca_saureus['Strain'].str.split('_').str[0]
+tmrca_saureus['study_strain'] = tmrca_saureus['study'] + '\n' + tmrca_saureus['strain']
+tmrca_saureus = tmrca_saureus.sort_values(['pub_year', 'study']).reset_index(drop = True)
+
+legend_info_tmrca = [Line2D([0], [0], marker = 'x', color = inf_color, linewidth = 0, markeredgewidth = 2, label = 'HAI\nonset', markersize = 8)]
+legend_info_tmrca += [plt.Rectangle((0,0),1,1, facecolor = tmrca_col, edgecolor = 'w', linewidth = 0, label = 'TMRCA of pathogenic\nlineage in microbiome\n(mean & 95% CI)')]
+legend_info_tmrca += [Line2D([0], [0], marker = '_', color = mol_clock_col['Applied'], markerfacecolor = mol_clock_col['Applied'], linewidth = 2, markeredgecolor = 'k', markeredgewidth=0.2, label = 'Molecular clock\n(mean & 95% CI)', markersize = 8)]
+
+fig, axs = plt.subplots(figsize = (8, 6), nrows = 2, sharex = True, gridspec_kw={'height_ratios': [3, 1.25]})
+ax = axs.flatten()
+ax[0].axhline(0, ls = '--', lw = 1, c = 'k', alpha = 0.5)
+ax[0].annotate(text = 'Hospital admission', xy = (len(tmrca_saureus['study_strain']) - 0.55, 0.25), fontsize=fontsize, ha = 'right')
+ax[0].bar(x = tmrca_saureus['study_strain'], 
+            height = extract_listentry_pd_col(tmrca_saureus['tmrca_meanmut_ci95'], 1) - extract_listentry_pd_col(tmrca_saureus['tmrca_meanmut_ci95'], ci_lower_idx),
+            bottom = tmrca_saureus['days_in_hosp'] - extract_listentry_pd_col(tmrca_saureus['tmrca_meanmut_ci95'], 1),
+            color = tmrca_col, 
+            width = 0.65, 
+            zorder = 3)
+ax[0].scatter(x= tmrca_saureus['study_strain'], 
+              y = tmrca_saureus['days_in_hosp'] - tmrca_saureus['tmrca_meanmut'], 
+              color = '#555555', 
+              linestyle='None', 
+              s = 350, 
+              lw = 1, 
+              marker='_', 
+              zorder = 7)
+## mark HAI onset
+ax[0].add_patch(mpatches.Rectangle((-0.35, np.unique(tmrca_saureus['inf_date'])[0]-0.05), len(tmrca_saureus['study_strain'])-0.3, 0.1, color=inf_color, alpha = 0.2, zorder = 2))
+ax[0].annotate(text = 'Hospital admission', xy = (len(tmrca_saureus['study_strain']) - 0.25, 0.25), fontsize=fontsize, ha = 'right')
+
+ax[0].set_ylim((np.nanmin(tmrca_saureus['days_in_hosp'] - extract_listentry_pd_col(tmrca_saureus['tmrca_meanmut_ci95'], 1)) - 300,
+            np.nanmax(tmrca_saureus['days_in_hosp'] - extract_listentry_pd_col(tmrca_saureus['tmrca_meanmut_ci95'], ci_lower_idx)) + 150,
+            ))
+ax[0].set_ylabel('Time since hospital admission\n(in days)')
+ax[0].set_yscale('symlog')
+ax[0].get_yaxis().set_major_formatter(ScalarFormatter())
+ax[0].legend(handles = legend_info_tmrca, loc='center left', bbox_to_anchor=(1, 0.5), fancybox=False, shadow=False, fontsize = fontsize)
+ax[0].set_ylabel(ax[0].get_ylabel(), fontsize=fontsize+1)
+ax[0].set_ylim(None, 101)
+ax[0].set_title('Acquisition time', loc='right', ha = 'right', fontsize=fontsize-2)
+
+ax[1].scatter(x= tmrca_saureus['study_strain'], 
+              y = tmrca_saureus['mut_rate'], 
+              linestyle='None', 
+              s = 200, 
+              marker='_',
+              edgecolor = mol_clock_col['Applied'],
+              lw = 1.5, 
+              color = mol_clock_col['Applied'], 
+              zorder = 15)
+ax[1].vlines(x = tmrca_saureus['study_strain'], 
+           ymin = extract_listentry_pd_col(tmrca_saureus['mut_rate_ci95'], 0),
+           ymax = extract_listentry_pd_col(tmrca_saureus['mut_rate_ci95'], 1),
+           color = mol_clock_col['Applied'], 
+           lw = 1.5, 
+           zorder = 15)
+ax[1].set_yticks(np.arange( np.ceil(max( 
+                                    np.nanmax(extract_listentry_pd_col(tmrca_saureus['mut_rate_ci95'], 1)), 
+                                    np.nanmax(tmrca_saureus['mut_rate'])) 
+                                    + 1))) 
+ax[1].set_ylabel('Mutations/\nMb/year')
+ax[1].set_ylabel(ax[1].get_ylabel(), fontsize=fontsize+1)
+ax[1].set_title('Substitution rates', loc='right', ha = 'right', fontsize=fontsize-2)
+ax[1].set_ylim(0, None)
+ax[1].set_xlim(-0.75, len(tmrca_saureus['study_strain']) - 0.5)
+ax[1].set_xticklabels(ax[1].get_xticklabels(), rotation = 90, ha = 'center', va = 'top')
+[ax[idx].spines['top'].set_visible(False) for idx, a in enumerate(ax)]
+[ax[idx].spines['right'].set_visible(False) for idx, a in enumerate(ax)]
+plt.tick_params(labelsize=fontsize)
+plt.tight_layout()
+plt.savefig(os.path.expanduser(f'~/Nextcloud/keylab/projects/mf_2020_hap/labbook/data_analysis/figures/2026_05_15_tmrca_nonhypermut_patho_clades_min8isolates_lit_clocks_Saureus_wclocks_10kMCsim.svg'))
+
+
+
+
+## All together within one plot (R2R)
+legend_info_tmrca = [Line2D([0], [0], marker = 'x', color = inf_color, linewidth = 0, markeredgewidth = 2, label = 'HAI\nonset', markersize = 8)]
+legend_info_tmrca += [plt.Rectangle((0,0),1,1, facecolor = tmrca_col, edgecolor = 'w', linewidth = 0, label = 'tMRCA of pathogenic\nlineage in microbiome\n(mean & 95% CI)')]
+legend_info_tmrca += [Line2D([0], [0], marker = 'o', color = mol_clock_col['Alternative'], markerfacecolor = mol_clock_col['Alternative'], markeredgecolor = 'k', markeredgewidth=0.2, linewidth = 2, label = 'tMRCA using an\nalternative molecular clock\n(mean & 95% CI)', markersize = 8)]
+
+legend_info_mol_clock = [Line2D([0], [0], linewidth = 0, label = 'Molecular clock\n(mean & 95% CI)')]
+for label, col in mol_clock_col.items():
+    legend_info_mol_clock += [Line2D([0], [0], marker = 'o', color = col, markerfacecolor = col, linewidth = 2, markeredgecolor = 'k', markeredgewidth=0.2, label = label, markersize = 8)]
 
 fig, axs = plt.subplots(figsize = (6, 5), nrows = 2, sharex = True, gridspec_kw={'height_ratios': [3, 1]})
 ax = axs.flatten()
@@ -514,7 +664,7 @@ ax[1].set_ylabel(ax[1].get_ylabel(), fontsize=fontsize+1)
 ax[1].set_title('Substitution rates', loc='right', ha = 'right', fontsize=fontsize-2)
 
 ## add the additional molecular clocks which have been unselected 
-for spec in tmrca_spec_inf_clades_nohypmut_unsel['spec_clade_subj_plt']:
+for spec in tmrca_spec_inf_clades_nohypmut_unsel['spec_clade_subj_plt'].unique():
     tmrca_add_mol_clocks_spec = tmrca_spec_inf_clades_nohypmut_unsel[tmrca_spec_inf_clades_nohypmut_unsel['spec_clade_subj_plt'] == spec].reset_index(drop = True)
     x_idx = np.where(tmrca_spec_inf_clades_nohypmut_sel['spec_clade_subj_plt'] == spec)[0] ## get the x axis idx for the plot 
     ## define the interspacing (-.4 to .4 with the mid zone (-.1 to .1) left empty)
