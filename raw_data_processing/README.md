@@ -55,7 +55,7 @@ Before running the `Snakemake` pipeline, minor modifications need to be conducte
             kraken2-build --build --use-ftp --threads 72 --db ${DBNAME}
             ## NOTE: DB should not be cleaned, otherwise the Bracken DB cannot be created!
             ## build Bracken DB
-            ## -t threads, -k kmer length (kraken default = 35), -l read-length (dependent on the sequencing data, and based on recommondations, min read length might be the best (but is not fairly tested: https://github.com/jenniferlu717/Bracken/issues/60)
+            ## -t threads, -k kmer length (kraken default = 35), -l read-length (dependent on the sequencing data, and based on recommondations, min read length might be the best (but is not fairly tested: https://github.com/jenniferlu717/Bracken/issues/60))
             bracken-build -d ${DBNAME} -t 72 -k 35 -l 100
             ```
     - `mapping` & `kraken2`: All mapping (`species_specific/mapping/`, `lineage_specific/mapping/`) and kraken2 (`kraken2`) pipelines require the [Bakta database](https://github.com/oschwengers/bakta?tab=readme-ov-file#database). For this, the full database ([version 4.0](https://zenodo.org/records/7025248)) has been installed.

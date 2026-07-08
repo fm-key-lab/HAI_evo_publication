@@ -47,7 +47,7 @@ def fasta_parse(fasta_file):
     for fasta in fasta_file:
         hdr = fasta.id
         hdr = hdr.split('_')
-        if int(hdr[3]) > 500:
+        if int(hdr[3]) >= 500:
             # print(hdr[3])
             ls_lgt.append(int(hdr[3]))
             ls_cov.append(float(hdr[5]))
